@@ -42,7 +42,7 @@ import java.util.*;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-@Profile("dev") // S'exécute uniquement avec le profil 'dev'
+@Profile({"dev", "docker"}) // S'exécute uniquement avec le profil 'dev' ou 'docker'
 public class DataSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
@@ -80,13 +80,16 @@ public class DataSeeder implements CommandLineRunner {
      * par le seeder.
      */
     private Mono<Void> cleanDatabase() {
-        log.info("🧹 Purge des données existantes (excepté postes / permissions) …");
-        return pricingRepository.deleteAll()
+        log.info("🧹 Purge des données existantes (excepté postes / permissions système) …");
+        return userRepository.clearUserReferences()
+            .then(pricingRepository.deleteAll())
             .then(driverRepository.deleteAll())
+            .then(vehicleRepository.deleteAll())
+            .then(subscriptionRepository.deleteAll())
             .then(agencyRepository.deleteAll())
-            .then(staffRepository.deleteAll())
-            .then(userRepository.deleteAll())
-            .then(organizationRepository.deleteAll());
+            .then(posteRepository.deleteOrganizationPostes())
+            .then(organizationRepository.deleteAll())
+            .then(userRepository.deleteAll());
     }
 
     private Mono<Void> seedOrganizations() {

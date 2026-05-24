@@ -27,4 +27,8 @@ public interface PosteRepository extends R2dbcRepository<PosteEntity, UUID> {
     // Récupérer les ID des permissions
     @Query("SELECT permission_id FROM postes_permissions WHERE poste_id = :posteId")
     Flux<UUID> findPermissionIdsByPosteId(UUID posteId);
+
+    @Modifying
+    @Query("DELETE FROM postes WHERE organization_id IS NOT NULL")
+    Mono<Void> deleteOrganizationPostes();
 }

@@ -150,7 +150,12 @@ public class RentalService {
                                 true,
                                 String.format(NotificationTemplate.RESERVATION_INIT_CLIENT.getTemplate(), totalFinal.multiply(BigDecimal.valueOf(0.6))),
                                 saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
-                            ));
+                            ))
+                            // Notification agence : nouvelle réservation reçue
+                            .flatMap(response -> notificationService.createNotification(
+                                response.rentalId(), agency.getId(), NotificationResourceType.AGENCY, NotificationReason.RESERVATION_NEW,
+                                request.vehicleId(), request.driverId(), NotificationTemplate.RESERVATION_INIT_AGENCY
+                            ).thenReturn(response));
                     });
                 }));
     }
