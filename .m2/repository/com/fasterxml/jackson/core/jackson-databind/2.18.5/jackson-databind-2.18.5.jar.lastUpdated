@@ -1,0 +1,6 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun May 31 21:21:13 WAT 2026
+https\://dl.bintray.com/jwtk/coveralls-maven-plugin/.error=
+@default-central-https\://repo.maven.apache.org/maven2/.lastUpdated=1780258858418
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact com.fasterxml.jackson.core\:jackson-databind\:jar\:2.18.5 from/to central (https\://repo.maven.apache.org/maven2)\: repo.maven.apache.org
+https\://dl.bintray.com/jwtk/coveralls-maven-plugin/.lastUpdated=1780258873446

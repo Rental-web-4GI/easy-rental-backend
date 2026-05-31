@@ -1,0 +1,10 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun May 31 21:21:10 WAT 2026
+@default-spring-release-https\://repo.spring.io/release/.lastUpdated=1780258867574
+@default-central-https\://repo.maven.apache.org/maven2/.lastUpdated=1780258858409
+https\://repo.spring.io/milestone/.error=
+https\://repo.spring.io/milestone/.lastUpdated=1780258870474
+https\://repo.spring.io/snapshot/.error=
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.webjars\:swagger-ui\:jar\:5.18.2 from/to central (https\://repo.maven.apache.org/maven2)\: repo.maven.apache.org
+https\://repo.spring.io/snapshot/.lastUpdated=1780258868882
+https\://repo.spring.io/release/.error=Could not transfer artifact org.webjars\:swagger-ui\:jar\:5.18.2 from/to spring-release (https\://repo.spring.io/release)\: status code\: 401, reason phrase\:  (401)

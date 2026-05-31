@@ -1,0 +1,33 @@
+package com.yowyob.easyrental.modules.organization.dto;
+import java.time.LocalDateTime;
+import java.util.UUID;
+public record OrgResponseDTO(
+    UUID id,
+    String name,
+    String description,
+    UUID ownerId,
+    String registrationNumber,
+    String taxNumber,
+    String businessLicense,
+    String address,
+    String city,
+    String country,
+    String postalCode,
+    String region,
+    String phone,
+    String email,
+    String website,
+    Boolean isVerified,
+    LocalDateTime verificationDate,
+    Integer currentAgencies,
+    Integer currentVehicles,
+    Integer currentDrivers,
+    String timezone,
+    String logoUrl,
+    UUID subscriptionPlanId,
+    LocalDateTime subscriptionExpiresAt,
+    Integer totalRentals,
+    Double monthlyRevenue,
+    Double yearlyRevenue,
+    Boolean isDriverBookingRequired
+) {}

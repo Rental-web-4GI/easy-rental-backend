@@ -414,4 +414,8 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="09-enable-postgis" author="easyrental">
+        <sqlFile path="changes/09-postgis.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+
 </databaseChangeLog>
