@@ -1,10 +1,10 @@
 package com.yowyob.easyrental.modules.vehicle.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.driver.dto.DriverResponseDTO;
-import com.yowyob.easyrental.modules.driver.application.DriverUseCaseImpl;
+import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleRequestDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleResponseDTO;
-import com.yowyob.easyrental.modules.vehicle.application.VehicleUseCaseImpl;
+import com.yowyob.easyrental.modules.vehicle.domain.port.in.VehicleUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleDetailResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
@@ -17,7 +17,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -31,33 +40,35 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class VehicleController {
 
-    private final VehicleUseCaseImpl vehicleUseCaseImpl;
-    private final DriverUseCaseImpl driverUseCaseImpl;
+    private final VehicleUseCase vehicleUseCase;
+    private final DriverUseCase driverUseCase;
 
     @Operation(summary = "Ajouter un véhicule à la flotte (Vérifie les quotas)")
     @NotNull
     @PostMapping("/org/{orgId}")
     @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'vehicle:create')")
-    public Mono<ResponseEntity<VehicleResponseDTO>> create(@PathVariable UUID orgId, @RequestBody VehicleRequestDTO request) {
-        return vehicleUseCaseImpl.createVehicle(orgId, request).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<VehicleResponseDTO>> create(
+            @PathVariable UUID orgId,
+            @RequestBody VehicleRequestDTO request) {
+        return vehicleUseCase.createVehicle(orgId, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Lister tous les véhicules d'une organisation")
     @GetMapping("/org/{orgId}")
     public Flux<VehicleResponseDTO> getAllByOrg(@PathVariable UUID orgId) {
-        return vehicleUseCaseImpl.getVehiclesByOrg(orgId);
+        return vehicleUseCase.getVehiclesByOrg(orgId);
     }
 
     @Operation(summary = "Lister les véhicules d'une agence")
     @GetMapping("/agency/{agencyId}")
     public Flux<VehicleResponseDTO> getAllByAgency(@PathVariable UUID agencyId) {
-        return vehicleUseCaseImpl.getVehiclesByAgency(agencyId);
+        return vehicleUseCase.getVehiclesByAgency(agencyId);
     }
 
     @Operation(summary = "Lister tous les véhicules disponibles sur la plateforme")
     @GetMapping("/available")
     public Flux<VehicleResponseDTO> getAvailableVehicles() {
-        return vehicleUseCaseImpl.getAvailableVehicles();
+        return vehicleUseCase.getAvailableVehicles();
     }
 
     // Route publique pour rechercher des véhicules
@@ -67,30 +78,32 @@ public class VehicleController {
             @RequestParam(required = false) UUID agencyId,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) String keyword) {
-        return vehicleUseCaseImpl.searchAvailableVehicles(agencyId, categoryId, keyword);
+        return vehicleUseCase.searchAvailableVehicles(agencyId, categoryId, keyword);
     }
 
     // Route publique pour lister les véhicules disponibles d'une agence
     @Operation(summary = "Lister les véhicules disponibles d'une agence (Client)")
     @GetMapping("/agency/{agencyId}/available")
     public Flux<VehicleResponseDTO> getAvailableVehiclesByAgency(@PathVariable UUID agencyId) {
-        return vehicleUseCaseImpl.getAvailableVehiclesByAgency(agencyId);
+        return vehicleUseCase.getAvailableVehiclesByAgency(agencyId);
     }
 
     @Operation(summary = "Trouver les chauffeurs disponibles pour une agence sur une période")
     @GetMapping("/drivers/available")
     public Flux<DriverResponseDTO> getAvailableDriversForBooking(
             @Parameter(description = "ID de l'agence") @RequestParam UUID agencyId,
-            @Parameter(description = "Date de début (ISO-8601)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @Parameter(description = "Date de fin (ISO-8601)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate
+            @Parameter(description = "Date de début (ISO-8601)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO
+                    .DATE_TIME) LocalDateTime startDate,
+            @Parameter(description = "Date de fin (ISO-8601)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO
+                    .DATE_TIME) LocalDateTime endDate
     ) {
-        return driverUseCaseImpl.getAvailableDrivers(agencyId, startDate, endDate);
+        return driverUseCase.getAvailableDrivers(agencyId, startDate, endDate);
     }
 
     @Operation(summary = "Obtenir les détails complets (Planning + Prix + evaluation) d'un véhicule")
     @GetMapping("/{id}/details")
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> getVehicleDetails(@PathVariable UUID id) {
-        return vehicleUseCaseImpl.getVehicleDetails(id).map(ResponseEntity::ok);
+        return vehicleUseCase.getVehicleDetails(id).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Mettre à jour le prix de location du véhicule")
@@ -99,7 +112,7 @@ public class VehicleController {
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updatePricing(
             @PathVariable UUID id,
             @RequestBody PricingUpdateDTO request) {
-        return vehicleUseCaseImpl.updateVehiclePricing(id, request).map(ResponseEntity::ok);
+        return vehicleUseCase.updateVehiclePricing(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Ajouter des indisponibilités (Planning) au véhicule")
@@ -108,34 +121,36 @@ public class VehicleController {
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updateSchedule(
             @PathVariable UUID id,
             @RequestBody ScheduleUpdateDTO request) {
-        return vehicleUseCaseImpl.updateVehicleSchedules(id, request).map(ResponseEntity::ok);
+        return vehicleUseCase.updateVehicleSchedules(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Obtenir les détails d'un véhicule par son ID")
     @GetMapping("/{id}")
     public Mono<ResponseEntity<VehicleResponseDTO>> getById(@PathVariable UUID id) {
-        return vehicleUseCaseImpl.getVehicleById(id).map(ResponseEntity::ok);
+        return vehicleUseCase.getVehicleById(id).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Mettre à jour les informations d'un véhicule")
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.hasPermission(#orgId, 'vehicle:update')")
-    public Mono<ResponseEntity<VehicleResponseDTO>> update(@PathVariable UUID id, @RequestBody VehicleRequestDTO request) {
-        return vehicleUseCaseImpl.updateVehicle(id, request).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<VehicleResponseDTO>> update(
+            @PathVariable UUID id,
+            @RequestBody VehicleRequestDTO request) {
+        return vehicleUseCase.updateVehicle(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Changer le statut du véhicule (MAINTENANCE, AVAILABLE, RENTED)")
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.hasPermission(#orgId, 'vehicle:update')")
     public Mono<ResponseEntity<VehicleResponseDTO>> updateStatus(@PathVariable UUID id, @RequestParam String status) {
-        return vehicleUseCaseImpl.updateVehicleStatus(id, status).map(ResponseEntity::ok);
+        return vehicleUseCase.updateVehicleStatus(id, status).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Supprimer un véhicule (Met à jour les compteurs)")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'vehicle:delete')")
      public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
-        return vehicleUseCaseImpl.deleteVehicle(id).then(Mono.just(ResponseEntity.noContent().build()));
+        return vehicleUseCase.deleteVehicle(id).then(Mono.just(ResponseEntity.noContent().build()));
     }
 
     @Operation(summary = "Lister les véhicules d'une organisation filtrés par catégorie")
@@ -144,7 +159,7 @@ public class VehicleController {
     public Flux<VehicleResponseDTO> getByOrgAndCategory(
             @PathVariable UUID orgId,
             @PathVariable UUID categoryId) {
-        return vehicleUseCaseImpl.getVehiclesByOrgAndCategory(orgId, categoryId);
+        return vehicleUseCase.getVehiclesByOrgAndCategory(orgId, categoryId);
     }
 
     @Operation(summary = "Lister les véhicules d'une agence filtrés par catégorie")
@@ -153,6 +168,6 @@ public class VehicleController {
     public Flux<VehicleResponseDTO> getByAgencyAndCategory(
             @PathVariable UUID agencyId,
             @PathVariable UUID categoryId) {
-        return vehicleUseCaseImpl.getVehiclesByAgencyAndCategory(agencyId, categoryId);
+        return vehicleUseCase.getVehiclesByAgencyAndCategory(agencyId, categoryId);
     }
 }

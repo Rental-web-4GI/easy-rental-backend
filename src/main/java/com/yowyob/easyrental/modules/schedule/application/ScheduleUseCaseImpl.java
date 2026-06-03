@@ -1,7 +1,7 @@
 package com.yowyob.easyrental.modules.schedule.application;
 
 import com.yowyob.easyrental.modules.schedule.domain.ScheduleEntity;
-import com.yowyob.easyrental.modules.schedule.infrastructure.adapter.out.persistence.ScheduleRepository;
+import com.yowyob.easyrental.modules.schedule.domain.port.out.ScheduleRepositoryPort;
 import com.yowyob.easyrental.shared.dto.ScheduleRequestDTO;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
@@ -17,10 +17,11 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ScheduleUseCaseImpl implements ScheduleUseCase {
-    private final ScheduleRepository scheduleRepository;
+    private final ScheduleRepositoryPort scheduleRepository;
 
     @Transactional
-    public Mono<ScheduleEntity> addUnavailability(UUID orgId, ResourceType type, UUID resourceId, ScheduleRequestDTO request) {
+    public Mono<ScheduleEntity> addUnavailability(UUID orgId, ResourceType type, UUID resourceId,
+            ScheduleRequestDTO request) {
         ScheduleEntity schedule = ScheduleEntity.builder()
                 .id(UUID.randomUUID())
                 .organizationId(orgId)
@@ -48,8 +49,10 @@ public class ScheduleUseCaseImpl implements ScheduleUseCase {
     @Transactional
     public Mono<Void> removeScheduleForRental(UUID vehicleId, UUID driverId, LocalDateTime start, LocalDateTime end) {
         // Logique simplifiée : on supprime les schedules qui correspondent exactement aux dates
-        // Dans une implémentation réelle, on pourrait stocker le rentalId dans la table schedule pour une suppression précise
+        // En prod : lier rentalId au schedule pour une suppression précise
         return scheduleRepository.deleteByResourceIdAndDates(vehicleId, start, end)
-                .then(driverId != null ? scheduleRepository.deleteByResourceIdAndDates(driverId, start, end) : Mono.empty());
+                .then(driverId != null
+                        ? scheduleRepository.deleteByResourceIdAndDates(driverId, start, end)
+                        : Mono.empty());
     }
 }

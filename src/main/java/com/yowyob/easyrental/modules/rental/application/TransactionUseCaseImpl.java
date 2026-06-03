@@ -2,10 +2,11 @@ package com.yowyob.easyrental.modules.rental.application;
 
 import com.yowyob.easyrental.modules.rental.dto.TransactionDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.TransactionResponseDTO;
-import com.yowyob.easyrental.modules.rental.infrastructure.adapter.out.persistence.PaymentRepository;
-import com.yowyob.easyrental.modules.rental.infrastructure.adapter.out.persistence.RentalRepository;
-import com.yowyob.easyrental.modules.subscription.infrastructure.adapter.out.persistence.SubscriptionPlanRepository;
-import com.yowyob.easyrental.modules.subscription.infrastructure.adapter.out.persistence.SubscriptionRepository;
+import com.yowyob.easyrental.modules.rental.domain.port.out.PaymentRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionRepositoryPort;
+import com.yowyob.easyrental.modules.auth.domain.port.out.AuthUserPort;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.TransactionUseCase;
 import com.yowyob.easyrental.shared.exception.ResourceNotFoundException;
@@ -21,13 +22,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransactionUseCaseImpl implements TransactionUseCase {
 
-    private final PaymentRepository paymentRepository;
-    private final SubscriptionRepository subscriptionRepository;
-    private final SubscriptionPlanRepository planRepository;
-    private final RentalRepository rentalRepository;
+    private final PaymentRepositoryPort paymentRepository;
+    private final SubscriptionRepositoryPort subscriptionRepository;
+    private final SubscriptionPlanRepositoryPort planRepository;
+    private final RentalRepositoryPort rentalRepository;
 
-    // Injection du RentalUseCaseImpl pour récupérer les détails de la location liée au paiement
     private final RentalUseCase rentalUseCase;
+    private final AuthUserPort authUserPort;
 
     // =================================================================================
     // NOUVELLE MÉTHODE : Obtenir les détails complets d'une transaction
@@ -126,7 +127,8 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
             ));
 
         // 2. Flux des dépenses d'abonnement (Négatif ou Informatif)
-        Flux<TransactionResponseDTO> subscriptionExpenseFlux = subscriptionRepository.findAllByOrganizationIdOrderByStartDateDesc(orgId)
+        Flux<TransactionResponseDTO> subscriptionExpenseFlux = subscriptionRepository
+                .findAllByOrganizationIdOrderByStartDateDesc(orgId)
             .flatMap(sub -> planRepository.findByName(sub.getPlanType())
                 .map(plan -> new TransactionResponseDTO(
                     sub.getId(),
@@ -142,5 +144,11 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
         // 3. Fusion et Tri
         return Flux.merge(rentalIncomeFlux, subscriptionExpenseFlux)
             .sort(Comparator.comparing(TransactionResponseDTO::date).reversed());
+    }
+
+    @Override
+    public Flux<TransactionResponseDTO> getClientTransactionsByEmail(String email) {
+        return authUserPort.findByEmail(email)
+                .flatMapMany(user -> getClientTransactions(user.getId()));
     }
 }

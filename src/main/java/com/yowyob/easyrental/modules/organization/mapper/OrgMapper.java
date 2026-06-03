@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 public class OrgMapper {
 
     public OrgResponseDTO toDto(OrganizationEntity entity) {
-        if (entity == null) return null;
+        if (entity == null) {
+            return null;
+        }
         return new OrgResponseDTO(
             entity.getId(),
             entity.getName(),

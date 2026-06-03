@@ -1,9 +1,9 @@
 package com.yowyob.easyrental.modules.media.application;
 
-import com.yowyob.easyrental.modules.auth.infrastructure.adapter.out.persistence.UserRepository;
+import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
-import com.yowyob.easyrental.modules.media.infrastructure.adapter.out.persistence.MediaRepository;
-import com.yowyob.easyrental.modules.organization.infrastructure.adapter.out.persistence.OrganizationRepository;
+import com.yowyob.easyrental.modules.media.domain.port.out.MediaRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
 import jakarta.annotation.PostConstruct;
 import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
 import lombok.RequiredArgsConstructor;
@@ -33,9 +33,9 @@ public class MediaUseCaseImpl implements MediaUseCase {
     @Value("${application.base-url:http://localhost:8080}")
     private String baseUrl;
 
-    private final MediaRepository mediaRepository;
-    private final UserRepository userRepository;
-    private final OrganizationRepository organizationRepository;
+    private final MediaRepositoryPort mediaRepository;
+    private final UserRepositoryPort userRepository;
+    private final OrganizationRepositoryPort organizationRepository;
 
     // Crée le dossier au démarrage si inexistant
     @PostConstruct
@@ -57,7 +57,8 @@ public class MediaUseCaseImpl implements MediaUseCase {
 
                     if ("ORGANIZATION".equals(user.getRole())) {
                         // Si c'est une ORG, on cherche son nom
-                        prefixMono = organizationRepository.findByOwnerId(user.getId()) // Méthode à ajouter dans OrgRepo*
+                        prefixMono = organizationRepository.findByOwnerId(user
+                                .getId()) // Méthode à ajouter dans OrgRepo*
                                 .map(org -> sanitizeFilename(org.getName()))
                                 .defaultIfEmpty("org_" + user.getId());
                     } else {
@@ -91,7 +92,6 @@ public class MediaUseCaseImpl implements MediaUseCase {
                 .id(UUID.randomUUID())
                 .filename(filename)
                 .originalFilename(filePart.filename())
-                // .fileType(filePart.headers().getContentType() != null ? filePart.headers().getContentType().toString() : "application/octet-stream")
                 .fileType(fileTypeString)
                 .fileUrl(url)
                 .uploaderId(uploaderId)

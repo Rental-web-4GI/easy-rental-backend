@@ -1,0 +1,54 @@
+---
+description: Charte Frontend Next.js — conventions React, UI, PWA, DuckDB-Wasm, Leaflet/MapLibre
+alwaysApply: true
+---
+
+# Charte Frontend Next.js
+
+## Stack Technologique
+- **Framework**: Next.js 14+ (App Router)
+- **UI**: TailwindCSS + shadcn/ui
+- **State Management**: React Context + Zustand (si nécessaire)
+- **Forms**: React Hook Form + Zod
+- **Maps**: Leaflet ou MapLibre GL JS
+- **Local DB**: DuckDB-Wasm (pour les données offline)
+- **PWA**: next-pwa pour la gestion offline
+
+## Conventions Code
+- **Components**: PascalCase (`UserProfile.tsx`)
+- **Hooks**: camelCase avec préfixe `use` (`useUserData.ts`)
+- **Utils/Helpers**: camelCase (`formatDate.ts`)
+- **Types/Interfaces**: PascalCase (`UserProps.ts`)
+- **Constants**: UPPER_SNAKE_CASE (`API_BASE_URL.ts`)
+
+## Structure Dossiers
+```
+src/
+├── app/              # App Router (pages, layouts)
+├── components/       # Composants réutilisables
+│   ├── ui/          # Composants shadcn/ui
+│   └── features/    # Composants métier
+├── lib/             # Utilitaires, helpers
+├── hooks/           # Custom hooks
+├── types/           # Types TypeScript
+├── store/           # Zustand stores
+└── public/          # Assets statiques
+```
+
+## PWA & Offline
+- Activer le service worker avec next-pwa
+- Gérer les états online/offline
+- Utiliser DuckDB-Wasm pour les données locales
+- Synchroniser avec le backend quand online
+
+## Maps & Geolocation
+- Préférer Leaflet pour la simplicité ou MapLibre pour les fonctionnalités avancées
+- Gérer les permissions de géolocalisation
+- Cacher les tuiles maps pour offline
+- Utiliser PostGIS côté backend pour les requêtes spatiales
+
+## Performance
+- Lazy loading des composants lourds
+- Optimisation des images avec next/image
+- Code splitting automatique avec App Router
+- Minimiser les re-renders avec React.memo

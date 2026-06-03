@@ -1,0 +1,62 @@
+---
+description: Charte Architecture Hexagonale Java — Ports & Adapters, Clean Architecture
+alwaysApply: true
+---
+
+# Charte Architecture Hexagonale Java
+
+## Principe Fondamental
+L'application est organisée en couches indépendantes autour du domaine métier. Les dépendances vont toujours de l'extérieur vers l'intérieur.
+
+## Structure des Packages
+```
+com.yowyob.easyrental.modules.{module}/
+├── domain/                    # Cœur du domaine (business logic pure)
+│   ├── entity/               # Entités du domaine
+│   ├── port/                 # Ports (interfaces)
+│   │   ├── in/              # Ports d'entrée (UseCases)
+│   │   └── out/             # Ports de sortie (Repositories, Services externes)
+│   └── service/              # Services du domaine (si nécessaire)
+├── application/              # Cas d'utilisation (orchestration)
+│   └── {Module}UseCaseImpl  # Implémentation des ports d'entrée
+├── infrastructure/           # Adaptateurs techniques
+│   ├── adapter/
+│   │   ├── in/             # Adaptateurs d'entrée (Controllers, Event Listeners)
+│   │   │   └── web/        # REST Controllers
+│   │   └── out/            # Adaptateurs de sortie
+│   │       ├── persistence/ # Repositories Spring Data
+│   │       ├── messaging/   # Kafka, RabbitMQ
+│   │       └── external/    # Appels API externes
+│   └── config/             # Configuration Spring
+└── dto/                     # Data Transfer Objects
+```
+
+## Règles d'Injection
+- **Controllers injectent uniquement des UseCases (ports d'entrée)**
+- Jamais d'injection directe de repositories dans les controllers
+- Jamais d'injection de services techniques dans les controllers
+- Les UseCases injectent les ports de sortie (repositories, services externes)
+
+## Exemple Correct
+```java
+@RestController
+@RequiredArgsConstructor
+public class AgencyController {
+    private final AgencyUseCase agencyUseCase; // ✅ Port d'entrée
+}
+```
+
+## Exemple Incorrect
+```java
+@RestController
+@RequiredArgsConstructor
+public class AgencyController {
+    private final AgencyRepository agencyRepository; // ❌ Repository direct
+}
+```
+
+## Nomenclature
+- Ports d'entrée: `{Module}UseCase` (interface)
+- Implémentation: `{Module}UseCaseImpl`
+- Ports de sortie: `{Module}RepositoryPort`, `{Module}ServicePort`
+- Adaptateurs: `{Module}RepositoryAdapter`, `{Module}ServiceAdapter`

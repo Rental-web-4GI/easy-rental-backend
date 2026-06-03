@@ -13,7 +13,8 @@ import java.util.UUID;
 public interface CategoryRepository extends R2dbcRepository<VehicleCategoryEntity, UUID> {
 
     // Récupère les catégories via l'ID de l'organisation + Système
-    @Query("SELECT * FROM vehicle_categories WHERE organization_id = :orgId OR organization_id IS NULL ORDER BY name ASC")
+    @Query("SELECT * FROM vehicle_categories WHERE organization_id = :orgId OR organization_id IS NULL ORDER BY name"
+            + " ASC")
     Flux<VehicleCategoryEntity> findAllByOrganizationIdOrSystem(UUID orgId);
 
     /**

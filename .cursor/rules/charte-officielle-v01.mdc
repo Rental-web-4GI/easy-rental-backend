@@ -1,0 +1,114 @@
+---
+description: Charte officielle v0.1 — Thomas Djotio Ndié (30.09.25) — source PDF projet
+alwaysApply: true
+---
+
+# Charte de Développement et contraintes Technologiques (v0.1)
+
+**Auteur** : Thomas Djotio Ndié, Prof Dr_Eng. — thomas.djotio@yowyob.com  
+**Version** : 30.09.25, V0.1  
+**Source** : `Charte de Développement et contraintes Technologiques.pdf` (racine du dépôt)
+
+---
+
+## 1. Convention de nommage
+
+| Élément | Style | Exemple |
+|---------|--------|---------|
+| Variables | anglais, **snake_case** | `user_name`, `order_date` |
+| Constantes | **UPPER_SNAKE_CASE** | `MAX_SIZE`, `DEFAULT_TIMEOUT` |
+| Classes | **PascalCase** | `CustomerService`, `OrderManager` |
+| Méthodes | **camelCase** | `calculateTotal()`, `getUserName()` |
+| Packages | minuscules, sans accents | `com.yowyob.flashshop.service` |
+| Interfaces | PascalCase, **sans préfixe I** | `PaymentProcessor` |
+
+**Easy Rental (décision projet)** : en Java, variables/champs locaux en **camelCase** ; **snake_case** pour colonnes BDD (Liquibase) et champs JSON/API (Jackson).
+
+---
+
+## 2. Organisation du code
+
+- Une classe publique par fichier, nom du fichier = nom de la classe
+- Longueur de ligne max : **120 caractères**
+- Indentation : **4 espaces** (pas de tabulations)
+- Accolades ouvrantes sur la même ligne : `if (condition) {`
+- Pas d'imports wildcard (`import java.util.*;` interdit)
+
+---
+
+## 3. Documentation et commentaires
+
+- Chaque classe : header Javadoc (description, auteur, date création/mise à jour)
+- Méthodes publiques : `@param`, `@return`, `@throws`
+- Commentaires en **anglais**, concis ; éviter le superflu
+
+---
+
+## 4. Gestion des exceptions
+
+- Exceptions **spécifiques**, pas `Exception` générique en code métier
+- Propager seulement si pertinent, sinon gérer localement
+- Messages d'erreur **explicites en anglais**
+
+---
+
+## 5. Bonnes pratiques
+
+- SOLID et design patterns adaptés
+- Séparation claire des couches (charte : Controller / Service / Repository)
+- **Easy Rental** : architecture **hexagonale** exigée par le prof — Controller → **UseCase (port in)** → **ports out** → adapters ; pas d'injection de repository dans les controllers
+- Pas de valeurs magiques → constantes
+- Préférer les primitifs aux wrappers sauf nécessité
+- `Optional` (ou `Mono` en réactif) plutôt que `null`
+- Ne jamais logger mots de passe, tokens, données sensibles
+
+---
+
+## 6. Tests et qualité
+
+- Chaque nouvelle fonctionnalité : **tests unitaires JUnit 5**
+- Couverture minimum : **80 %** (JaCoCo)
+- Nommage tests explicite : `shouldReturnErrorWhenInputIsInvalid`
+- Outils : **Checkstyle**, **SonarLint**, **PMD**
+
+**État actuel Easy Rental** : JaCoCo rapport actif (~2 % lignes, 17 tests) ; `jacoco.check.skip=true`, `checkstyle.skip=true`, `pmd.skip=true` — réactivation progressive prévue.
+
+---
+
+## 7. Contrôle de version (Git)
+
+- Une fonctionnalité = une branche
+- Branches : `feature/nom_fonctionnalite`, `bugfix/description_bug`, `hotfix/description_rapide`
+- Commits en anglais, impératif : `Add payment gateway integration`, `Fix order calculation bug`
+
+---
+
+## 8. Objectifs pédagogiques et stack technologique
+
+### Objectifs (charte)
+
+- Système distribué **microservices** (objectif pédagogique charte)
+- DevOps : CI/CD, tests, monitoring
+- Design patterns et génie logiciel
+
+**Décision Easy Rental** : **monolithe modulaire hexagonal** (pas de microservices) — namespace `com.yowyob.easyrental`.
+
+### Stack imposée
+
+| Domaine | Technologies |
+|---------|----------------|
+| Backend | Java / Spring Boot **WebFlux**, **Liquibase**, **Kafka** |
+| BDD | **PostgreSQL / PostGIS**, **Redis** |
+| Recherche | **Elasticsearch** |
+| Frontend | **Next.js** (SSR/SEO) |
+| Cartes | OpenStreetMap, Maptiler, **MapLibre**, **Leaflet** |
+| Déploiement | **Docker**, **GitHub Actions** |
+| PWA | Application PWA |
+| Low latency / local-first | **DuckDB**, **DuckDB-Wasm**, couplage DuckDB–PostgreSQL |
+| Réseaux résilients | Données locales web/mobile (DuckDB-Wasm) |
+
+---
+
+## Référence rapide conformité Easy Rental
+
+Voir aussi : `easy-rental-backend/.cursor/rules/charte-hexagonal-java.mdc`, `charte-stack-infra.mdc`, `charte-frontend-nextjs.mdc`, `plan-conformite-easy-rental.mdc`.

@@ -1,21 +1,21 @@
 package com.yowyob.easyrental.modules.driver.application;
 
-import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.driver.domain.DriverEntity;
 import com.yowyob.easyrental.modules.driver.dto.DriverResponseDTO;
 import com.yowyob.easyrental.modules.driver.mapper.DriverMapper;
-import com.yowyob.easyrental.modules.driver.infrastructure.adapter.out.persistence.DriverRepository;
+import com.yowyob.easyrental.modules.driver.domain.port.out.DriverRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
-import com.yowyob.easyrental.modules.media.application.MediaUseCaseImpl;
-import com.yowyob.easyrental.modules.organization.infrastructure.adapter.out.persistence.OrganizationRepository;
-import com.yowyob.easyrental.modules.organization.application.OrganizationUseCaseImpl;
+import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
+import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
 import com.yowyob.easyrental.modules.driver.dto.DriverDetailResponseDTO;
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
-import com.yowyob.easyrental.modules.pricing.application.PricingUseCaseImpl;
-import com.yowyob.easyrental.modules.schedule.application.ScheduleUseCaseImpl;
+import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
+import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
-import com.yowyob.easyrental.modules.review.application.ReviewUseCaseImpl;
+import com.yowyob.easyrental.modules.review.domain.port.in.ReviewUseCase;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.shared.events.AuditEvent;
 import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
@@ -35,16 +35,16 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DriverUseCaseImpl implements DriverUseCase {
 
-    private final DriverRepository driverRepository;
-    private final AgencyRepository agencyRepository;
-    private final OrganizationUseCaseImpl organizationService;
-    private final OrganizationRepository organizationRepository;
-    private final MediaUseCaseImpl mediaService;
+    private final DriverRepositoryPort driverRepository;
+    private final AgencyRepositoryPort agencyRepository;
+    private final OrganizationUseCase organizationService;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final MediaUseCase mediaService;
     private final DriverMapper driverMapper;
     private final ApplicationEventPublisher eventPublisher;
-    private final ScheduleUseCaseImpl scheduleService;
-    private final PricingUseCaseImpl pricingService;
-    private final ReviewUseCaseImpl reviewService;
+    private final ScheduleUseCase scheduleService;
+    private final PricingUseCase pricingService;
+    private final ReviewUseCase reviewService;
 
     @Transactional
     public Mono<DriverResponseDTO> createDriver(
@@ -94,7 +94,8 @@ public class DriverUseCaseImpl implements DriverUseCase {
                         });
                     });
             })
-            .doOnSuccess(d -> eventPublisher.publishEvent(new AuditEvent("CREATE_DRIVER", "DRIVER", "Conducteur créé : " + d.getFirstname() + " " + d.getLastname())))
+            .doOnSuccess(d -> eventPublisher.publishEvent(new AuditEvent("CREATE_DRIVER", "DRIVER",
+                    "Conducteur créé : " + d.getFirstname() + " " + d.getLastname())))
             .flatMap(this::enrichDriver); // Enrichissement après création (prix null au début)
     }
 
@@ -118,10 +119,12 @@ public class DriverUseCaseImpl implements DriverUseCase {
                         .map(org -> org.getIsDriverBookingRequired() != null ? org.getIsDriverBookingRequired() : false)
                         .defaultIfEmpty(false);
 
-                return Mono.zip(dtoMono, pricingMono.defaultIfEmpty(new PricingEntity()), scheduleFlux, reviewsFlux, orgRequirementMono)
+                return Mono.zip(dtoMono, pricingMono.defaultIfEmpty(new PricingEntity()), scheduleFlux,
+                        reviewsFlux, orgRequirementMono)
                     .map(tuple -> new DriverDetailResponseDTO(
                         tuple.getT1(), // DTO
-                        tuple.getT2().getId() == null ? null : tuple.getT2(), // Pricing Entity (redondant mais gardé pour structure detail)
+                        tuple.getT2().getId() == null ? null : tuple.getT2(),
+                                // Pricing Entity (redondant mais gardé pour structure detail)
                         tuple.getT3(), // Schedule
                         driver.getRating(),
                         tuple.getT4(), // Reviews

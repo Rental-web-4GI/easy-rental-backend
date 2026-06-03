@@ -1,0 +1,22 @@
+{
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-21",
+      "path": "/usr/lib/jvm/java-21-openjdk-amd64",
+      "default": true
+    }
+  ],
+  "java.jdt.ls.java.home": "/usr/lib/jvm/java-21-openjdk-amd64",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.import.maven.enabled": true,
+  "maven.executable.path": "./mvnw",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.format.enabled": true,
+  "java.saveActions.organizeImports": true,
+  "editor.formatOnSave": true,
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true
+}

@@ -17,6 +17,11 @@
 		<java.version>21</java.version>
 		<springdoc.version>2.7.0</springdoc.version>
 		<jacoco.minimum.coverage>0.80</jacoco.minimum.coverage>
+		<!-- jacoco.skip=false : rapport ; jacoco.check.skip=false : seuil charte 80 % -->
+		<jacoco.skip>false</jacoco.skip>
+		<jacoco.check.skip>false</jacoco.check.skip>
+		<checkstyle.skip>false</checkstyle.skip>
+		<pmd.skip>false</pmd.skip>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -105,6 +110,63 @@
 	</dependencies>
 
 	<build>
+		<pluginManagement>
+			<plugins>
+				<!-- Ignore quality plugin executions in Eclipse/VS Code Java import (m2e) -->
+				<plugin>
+					<groupId>org.eclipse.m2e</groupId>
+					<artifactId>lifecycle-mapping</artifactId>
+					<version>1.0.0</version>
+					<configuration>
+						<lifecycleMappingMetadata>
+							<pluginExecutions>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-checkstyle-plugin</artifactId>
+										<versionRange>[3.0.0,)</versionRange>
+										<goals>
+											<goal>check</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore/>
+									</action>
+								</pluginExecution>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-pmd-plugin</artifactId>
+										<versionRange>[3.0.0,)</versionRange>
+										<goals>
+											<goal>check</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore/>
+									</action>
+								</pluginExecution>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.jacoco</groupId>
+										<artifactId>jacoco-maven-plugin</artifactId>
+										<versionRange>[0.8.0,)</versionRange>
+										<goals>
+											<goal>prepare-agent</goal>
+											<goal>report</goal>
+											<goal>check</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore/>
+									</action>
+								</pluginExecution>
+							</pluginExecutions>
+						</lifecycleMappingMetadata>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -130,10 +192,14 @@
 					</excludes>
 				</configuration>
 			</plugin>
+			<!-- JaCoCo — désactivé via jacoco.skip=true (réactiver plus tard) -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>0.8.12</version>
+				<configuration>
+					<skip>${jacoco.skip}</skip>
+				</configuration>
 				<executions>
 					<execution>
 						<goals>
@@ -153,6 +219,7 @@
 							<goal>check</goal>
 						</goals>
 						<configuration>
+							<skip>${jacoco.check.skip}</skip>
 							<excludes>
 								<exclude>**/dto/**</exclude>
 								<exclude>**/config/**</exclude>
@@ -179,11 +246,13 @@
 					</execution>
 				</executions>
 			</plugin>
+			<!-- Checkstyle — désactivé via checkstyle.skip=true -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-checkstyle-plugin</artifactId>
 				<version>3.6.0</version>
 				<configuration>
+					<skip>${checkstyle.skip}</skip>
 					<configLocation>file://${project.basedir}/checkstyle.xml</configLocation>
 					<consoleOutput>true</consoleOutput>
 					<failsOnError>true</failsOnError>
@@ -198,11 +267,13 @@
 					</execution>
 				</executions>
 			</plugin>
+			<!-- PMD — désactivé via pmd.skip=true -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-pmd-plugin</artifactId>
 				<version>3.26.0</version>
 				<configuration>
+					<skip>${pmd.skip}</skip>
 					<rulesets>
 						<ruleset>pmd-rules.xml</ruleset>
 					</rulesets>

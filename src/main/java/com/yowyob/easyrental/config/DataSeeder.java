@@ -37,7 +37,10 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -130,7 +133,9 @@ public class DataSeeder implements CommandLineRunner {
 
                         return userRepository.save(owner).flatMap(savedOwner -> {
                             savedOwner.setNewRecord(false);
-                            LocalDateTime expiresAt = (plan.getDurationDays() > 0) ? LocalDateTime.now().plusDays(plan.getDurationDays()) : null;
+                            LocalDateTime expiresAt = (plan.getDurationDays() > 0)
+                                    ? LocalDateTime.now().plusDays(plan.getDurationDays())
+                                    : null;
 
                             // Création de l'Organisation
                             OrganizationEntity org = OrganizationEntity.builder()
@@ -151,7 +156,9 @@ public class DataSeeder implements CommandLineRunner {
                                 .subscriptionExpiresAt(expiresAt)
                                 .isVerified(true)
                                 .verificationDate(LocalDateTime.now())
-                                .logoUrl("https://ui-avatars.com/api/?name=" + orgName.replaceAll(" ", "+") + "&background=0D8ABC&color=fff&size=200")
+                                .logoUrl("https://ui-avatars.com/api/?name="
+                                        + orgName.replaceAll(" ", "+")
+                                        + "&background=0D8ABC&color=fff&size=200")
                                 .registrationNumber("RC/DLA/2024/B/" + System.currentTimeMillis())
                                 .taxNumber("M0123456789" + System.currentTimeMillis())
                                 .isDriverBookingRequired(false)
@@ -191,25 +198,46 @@ public class DataSeeder implements CommandLineRunner {
                 List<Mono<PosteEntity>> toCreate = new ArrayList<>();
 
                 if (!existingPostes.containsKey("Manager Agence")) {
-                    toCreate.add(posteRepository.save(PosteEntity.builder().id(UUID.randomUUID()).organizationId(org.getId()).name("Manager Agence").description("Responsable opérationnel").isNewRecord(true).build()));
+                    toCreate.add(posteRepository.save(PosteEntity.builder()
+                            .id(UUID.randomUUID())
+                            .organizationId(org.getId())
+                            .name("Manager Agence")
+                            .description("Responsable opérationnel")
+                            .isNewRecord(true)
+                            .build()));
                 }
                 if (!existingPostes.containsKey("Agent Commercial")) {
-                    toCreate.add(posteRepository.save(PosteEntity.builder().id(UUID.randomUUID()).organizationId(org.getId()).name("Agent Commercial").description("Gestion clientèle").isNewRecord(true).build()));
+                    toCreate.add(posteRepository.save(PosteEntity.builder()
+                            .id(UUID.randomUUID())
+                            .organizationId(org.getId())
+                            .name("Agent Commercial")
+                            .description("Gestion clientèle")
+                            .isNewRecord(true)
+                            .build()));
                 }
                 if (!existingPostes.containsKey("Chef de Parc")) {
-                    toCreate.add(posteRepository.save(PosteEntity.builder().id(UUID.randomUUID()).organizationId(org.getId()).name("Chef de Parc").description("Maintenance flotte").isNewRecord(true).build()));
+                    toCreate.add(posteRepository.save(PosteEntity.builder()
+                            .id(UUID.randomUUID())
+                            .organizationId(org.getId())
+                            .name("Chef de Parc")
+                            .description("Maintenance flotte")
+                            .isNewRecord(true)
+                            .build()));
                 }
 
                 return Flux.concat(toCreate)
-                    .then(posteRepository.findAllByOrganizationIdOrSystem(org.getId()).collectMap(PosteEntity::getName));
+                    .then(posteRepository.findAllByOrganizationIdOrSystem(org.getId())
+                            .collectMap(PosteEntity::getName));
             });
     }
 
-    private Mono<Void> seedAgenciesAndResources(OrganizationEntity org, SubscriptionPlanEntity plan, Map<String, PosteEntity> postes) {
+    private Mono<Void> seedAgenciesAndResources(
+            OrganizationEntity org, SubscriptionPlanEntity plan, Map<String, PosteEntity> postes) {
         return Flux.just("Douala - Bonanjo", "Yaoundé - Bastos")
             .flatMap(agencyName -> {
                 String city = agencyName.split(" - ")[0];
-                String email = "agence." + city.toLowerCase() + "@" + org.getName().toLowerCase().replaceAll(" ", "") + ".cm";
+                String email = "agence." + city.toLowerCase() + "@"
+                        + org.getName().toLowerCase().replaceAll(" ", "") + ".cm";
 
                 // Vérification existence Agence par Email (pour éviter doublons)
                 return agencyRepository.findAllByOrganizationId(org.getId())
@@ -271,7 +299,8 @@ public class DataSeeder implements CommandLineRunner {
             .then(updateOrganizationCounters(org.getId()));
     }
 
-    private Mono<UUID> seedStaff(OrganizationEntity org, AgencyEntity agency, int count, Map<String, PosteEntity> postes) {
+    private Mono<UUID> seedStaff(
+            OrganizationEntity org, AgencyEntity agency, int count, Map<String, PosteEntity> postes) {
         return Flux.range(1, count)
             .flatMap(i -> {
                 boolean isManager = (i == 1);
@@ -316,19 +345,29 @@ public class DataSeeder implements CommandLineRunner {
                 // 1. Toyota Corolla
                 vehiclesToCreate.add(createVehicleSafe(org, agency, categories.get("Berline (Sedan)"),
                     "Toyota", "Corolla LE", "LT-123-AB", 2021, 5, 45000.0, "AUTOMATIC", "Blanc", "Essence",
-                    new String[]{"https://images.unsplash.com/photo-1621007947382-bb3c3968e3bb?w=800", "https://images.unsplash.com/photo-1590362835106-1f209f957687?w=800"},
+                    new String[]{
+                        "https://images.unsplash.com/photo-1621007947382-bb3c3968e3bb?w=800",
+                        "https://images.unsplash.com/photo-1590362835106-1f209f957687?w=800"
+                    },
                     35000.0));
 
                 // 2. Toyota Prado
                 vehiclesToCreate.add(createVehicleSafe(org, agency, categories.get("SUV (4x4)"),
                     "Toyota", "Land Cruiser Prado", "LT-888-CA", 2022, 7, 25000.0, "AUTOMATIC", "Noir", "Diesel",
-                    new String[]{"https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=800", "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=800"},
+                    new String[]{
+                        "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=800",
+                        "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=800"
+                    },
                     75000.0));
 
                 // 3. Mercedes C-Class
                 vehiclesToCreate.add(createVehicleSafe(org, agency, categories.get("Luxe (Luxury)"),
-                    "Mercedes-Benz", "Classe C 300", "LT-001-ZZ", 2023, 5, 10000.0, "AUTOMATIC", "Gris Argent", "Essence",
-                    new String[]{"https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?w=800", "https://images.unsplash.com/photo-1563720223185-11003d516935?w=800"},
+                    "Mercedes-Benz", "Classe C 300", "LT-001-ZZ", 2023, 5, 10000.0,
+                    "AUTOMATIC", "Gris Argent", "Essence",
+                    new String[]{
+                        "https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?w=800",
+                        "https://images.unsplash.com/photo-1563720223185-11003d516935?w=800"
+                    },
                     120000.0));
 
                 return Flux.concat(vehiclesToCreate).count().map(Long::intValue);
@@ -340,7 +379,9 @@ public class DataSeeder implements CommandLineRunner {
             String brand, String model, String plateBase, int year, int places, double km,
             String transmission, String color, String fuel, String[] images, double dailyPrice) {
 
-        if (category == null) return Mono.empty();
+        if (category == null) {
+            return Mono.empty();
+        }
 
         // On utilise la plaque de base pour vérifier l'unicité (pour éviter de recréer la même voiture)
         // Note: Dans un vrai projet, il faudrait une méthode findByLicencePlate dans le repo.
@@ -378,7 +419,8 @@ public class DataSeeder implements CommandLineRunner {
             .flatMap(savedVehicle -> {
                 // Création du prix
                 BigDecimal pricePerDay = BigDecimal.valueOf(dailyPrice);
-                BigDecimal pricePerHour = pricePerDay.divide(BigDecimal.valueOf(24), 2, java.math.RoundingMode.HALF_UP);
+                BigDecimal pricePerHour = pricePerDay.divide(
+                        BigDecimal.valueOf(24), 2, java.math.RoundingMode.HALF_UP);
 
                 PricingEntity pricing = PricingEntity.builder()
                     .id(UUID.randomUUID())
@@ -422,7 +464,8 @@ public class DataSeeder implements CommandLineRunner {
                     .tel(phone)
                     .age(28 + i)
                     .gender(0)
-                    .profilUrl("https://ui-avatars.com/api/?name=" + fname + "+" + lname + "&background=random&size=200")
+                    .profilUrl("https://ui-avatars.com/api/?name=" + fname + "+" + lname
+                            + "&background=random&size=200")
                     .cniUrl("https://placehold.co/600x400?text=CNI+" + lname)
                     .drivingLicenseUrl("https://placehold.co/600x400?text=Permis+" + lname)
                     .status("ACTIVE")

@@ -1,0 +1,66 @@
+---
+description: Plan de Conformité Easy Rental — décisions architecturales, phases de migration
+alwaysApply: true
+---
+
+# Plan de Conformité Easy Rental
+
+## Décisions Architecturales
+
+### Architecture
+- **Pattern**: Hexagonal (Ports & Adapters)
+- **Type**: Monolithe modulaire (pas de microservices)
+- **Namespace**: `com.yowyob.easyrental`
+- **Reactive**: Spring WebFlux + R2DBC
+
+### Modules Principaux
+- auth (Authentification, Utilisateurs)
+- organization (Organisations, Abonnements)
+- agency (Agences, Géolocalisation)
+- vehicle (Véhicules, Catégories, Pricing)
+- driver (Chauffeurs, Disponibilité)
+- rental (Locations, Transactions)
+- staff (Personnel, Postes, Permissions)
+- review (Avis, Notations)
+- media (Upload fichiers, Stockage)
+- notification (Notifications, Emails)
+- statistics (Dashboard, Analytics)
+
+## Phases de Migration
+
+### Phase 1: Structure de Base ✅ (faite)
+- Initialisation du projet Spring Boot 3.4
+- Configuration Maven multi-modules
+- Setup Docker Compose (PostgreSQL, Redis, Kafka, ES)
+
+### Phase 2: Architecture Hexagonale ✅
+- Création des packages domain/infrastructure/application
+- Définition des ports (UseCases, RepositoryPorts)
+- Implémentation des adaptateurs (Controllers, Repositories)
+
+### Phase 3: Migration des Services ✅
+- Refactorisation des services en UseCases
+- Injection des ports au lieu des implémentations
+- Séparation domain/infrastructure
+
+### Phase 4: Tests & Qualité ✅
+- Setup JUnit 5 + Mockito
+- Configuration JaCoCo (80% coverage)
+- Setup Checkstyle + PMD
+- Intégration SonarLint
+
+### Phase 5: CI/CD & DevOps ✅
+- Configuration GitHub Actions
+- Setup Docker multi-stage builds
+- Configuration monitoring (Prometheus + Grafana)
+
+## Conformité aux Règles (audit réel — à poursuivre)
+- ⚠️ Naming : namespace OK ; Javadoc quasi absent
+- ⚠️ Architecture hexagonale : structure OK ; **6 controllers** et **19 UseCaseImpl** couplés aux repositories
+- ❌ Injection repositories dans controllers : **6 violations** (Category, Subscription, Permission, Organization, Poste, Transaction)
+- ❌ Javadoc §3 : ~15 % des classes publiques
+- ❌ Tests 80 % : **~2 %** (17 tests) — `jacoco.check.skip=true`
+- ❌ Checkstyle + PMD : `skip=true` (désactivés temporairement)
+- ⚠️ Git flow : à appliquer selon charte §7
+
+Voir `.cursor/rules/easy-rental-audit-etat.mdc` à la racine du dépôt.

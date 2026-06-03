@@ -1,6 +1,6 @@
 package com.yowyob.easyrental.infrastructure.adapter.out.messaging;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * @since 2026-05-31
  */
 @Component
-@ConditionalOnProperty(name = "spring.kafka.bootstrap-servers")
+@ConditionalOnBean(KafkaTemplate.class)
 public class KafkaEventPublisher {
 
     private final KafkaTemplate<String, String> kafkaTemplate;

@@ -2,7 +2,10 @@ package com.yowyob.easyrental.modules.rental.domain;
 
 import com.yowyob.easyrental.shared.enums.RentalStatus;
 import com.yowyob.easyrental.shared.enums.RentalType;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;

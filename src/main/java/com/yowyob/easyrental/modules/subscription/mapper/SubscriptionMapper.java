@@ -10,7 +10,8 @@ import java.time.LocalDateTime;
 public class SubscriptionMapper {
 
     public SubscriptionResponseDTO toResponseDTO(OrganizationEntity org, SubscriptionPlanEntity plan) {
-        boolean isExpired = org.getSubscriptionExpiresAt() != null && org.getSubscriptionExpiresAt().isBefore(LocalDateTime.now());
+        boolean isExpired = org.getSubscriptionExpiresAt() != null
+                && org.getSubscriptionExpiresAt().isBefore(LocalDateTime.now());
         
         return new SubscriptionResponseDTO(
                 plan.getName(),

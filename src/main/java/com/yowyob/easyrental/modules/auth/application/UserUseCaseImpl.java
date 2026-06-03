@@ -3,9 +3,9 @@ package com.yowyob.easyrental.modules.auth.application;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.PasswordUpdateDTO;
 import com.yowyob.easyrental.modules.auth.dto.UserProfileUpdateDTO;
-import com.yowyob.easyrental.modules.auth.infrastructure.adapter.out.persistence.UserRepository;
+import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.permission.domain.PermissionEntity;
-import com.yowyob.easyrental.modules.permission.infrastructure.adapter.out.persistence.PermissionRepository;
+import com.yowyob.easyrental.modules.permission.domain.port.out.PermissionRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.port.in.UserUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,17 +20,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserUseCaseImpl implements UserUseCase {
 
-    private final UserRepository userRepository;
+    private final UserRepositoryPort userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final PermissionRepository permissionRepository;
+    private final PermissionRepositoryPort permissionRepository;
 
     @Transactional
     public Mono<UserEntity> updateProfile(UUID userId, UserProfileUpdateDTO dto) {
         return userRepository.findById(userId)
             .switchIfEmpty(Mono.error(new RuntimeException("Utilisateur non trouvé")))
             .flatMap(user -> {
-                if (dto.firstname() != null) user.setFirstname(dto.firstname());
-                if (dto.lastname() != null) user.setLastname(dto.lastname());
+                if (dto.firstname() != null) {
+                    user.setFirstname(dto.firstname());
+                }
+                if (dto.lastname() != null) {
+                    user.setLastname(dto.lastname());
+                }
                 user.setFullname(user.getFirstname() + " " + user.getLastname());
                 return userRepository.save(user);
             });

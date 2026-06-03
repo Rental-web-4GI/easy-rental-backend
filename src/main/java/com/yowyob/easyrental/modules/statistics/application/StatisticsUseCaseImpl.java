@@ -1,7 +1,13 @@
 package com.yowyob.easyrental.modules.statistics.application;
 
-import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
-import com.yowyob.easyrental.modules.statistics.dto.*;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
+import com.yowyob.easyrental.modules.statistics.dto.AgencyComparisonDTO;
+import com.yowyob.easyrental.modules.statistics.dto.AgencyStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.DistributionDataDTO;
+import com.yowyob.easyrental.modules.statistics.dto.FullDashboardDTO;
+import com.yowyob.easyrental.modules.statistics.dto.GlobalStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.OrgStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.TimeSeriesDataDTO;
 import com.yowyob.easyrental.modules.statistics.domain.port.in.StatisticsUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
@@ -9,14 +15,18 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private final DatabaseClient databaseClient;
-    private final AgencyRepository agencyRepository;
+    private final AgencyRepositoryPort agencyRepository;
 
     public Mono<FullDashboardDTO> getAgencyDashboard(UUID agencyId, int year) {
         return Mono.zip(
@@ -72,8 +82,11 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id) as total_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'ONGOING') as active_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
+                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                    WHERE r.agency_id = :id) as total_rev,
+                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                    WHERE r.agency_id = :id
+                    AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
         """;
 
         return databaseClient.sql(sql)
@@ -114,7 +127,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
     }
 
     private Mono<DistributionDataDTO> getVehicleStatusDistribution(UUID agencyId) {
-        return databaseClient.sql("SELECT statut, COUNT(*) as count FROM vehicles WHERE agency_id = :id GROUP BY statut")
+        return databaseClient.sql(
+                "SELECT statut, COUNT(*) as count FROM vehicles WHERE agency_id = :id GROUP BY statut")
             .bind("id", agencyId)
             .fetch().all()
             .collectMap(row -> (String) row.get("statut"), row -> (Long) row.get("count"))
@@ -140,11 +154,19 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 (SELECT COUNT(*) FROM vehicles WHERE organization_id = :id) as vehicles,
                 (SELECT COUNT(*) FROM drivers WHERE organization_id = :id) as drivers,
                 (SELECT COUNT(*) FROM users WHERE organization_id = :id AND role = 'STAFF') as staff,
-                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id WHERE a.organization_id = :id) as total_rentals,
-                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id WHERE a.organization_id = :id AND r.status = 'ONGOING') as active_rentals,
-                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id WHERE a.organization_id = :id AND r.status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id WHERE a.organization_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id WHERE a.organization_id = :id AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
+                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id
+                    WHERE a.organization_id = :id) as total_rentals,
+                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id
+                    WHERE a.organization_id = :id AND r.status = 'ONGOING') as active_rentals,
+                (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id
+                    WHERE a.organization_id = :id AND r.status = 'RESERVED') as reservations,
+                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                    JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
+                    WHERE a.organization_id = :id) as total_rev,
+                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                    JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
+                    WHERE a.organization_id = :id
+                    AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
         """;
 
         return databaseClient.sql(sql)
@@ -185,7 +207,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
     }
 
     private Mono<DistributionDataDTO> getVehicleStatusDistributionForOrg(List<UUID> agencyIds) {
-         return databaseClient.sql("SELECT statut, COUNT(*) as count FROM vehicles WHERE agency_id IN (:ids) GROUP BY statut")
+         return databaseClient.sql(
+                "SELECT statut, COUNT(*) as count FROM vehicles WHERE agency_id IN (:ids) GROUP BY statut")
             .bind("ids", agencyIds)
             .fetch().all()
             .collectMap(row -> (String) row.get("statut"), row -> (Long) row.get("count"))
@@ -193,7 +216,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
     }
 
     private Mono<DistributionDataDTO> getRentalStatusDistributionForOrg(List<UUID> agencyIds) {
-        return databaseClient.sql("SELECT status, COUNT(*) as count FROM rentals WHERE agency_id IN (:ids) GROUP BY status")
+        return databaseClient.sql(
+                "SELECT status, COUNT(*) as count FROM rentals WHERE agency_id IN (:ids) GROUP BY status")
             .bind("ids", agencyIds)
             .fetch().all()
             .collectMap(row -> (String) row.get("status"), row -> (Long) row.get("count"))
@@ -234,7 +258,9 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 Mono<Long> rentals = databaseClient.sql("SELECT COUNT(*) FROM rentals WHERE agency_id = :id")
                     .bind("id", agency.getId()).map(row -> row.get(0, Long.class)).one();
 
-                Mono<BigDecimal> revenue = databaseClient.sql("SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id")
+                Mono<BigDecimal> revenue = databaseClient.sql(
+                        "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+                        + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id")
                     .bind("id", agency.getId()).map(row -> row.get(0, BigDecimal.class)).one();
 
                 return Mono.zip(vehicles, rentals, revenue)
@@ -260,32 +286,44 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
             ? "EXTRACT(YEAR FROM created_at) = :year"
             : "EXTRACT(YEAR FROM created_at) = :year AND EXTRACT(MONTH FROM created_at) = :month";
 
-        String revSql = "SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :agencyId AND EXTRACT(YEAR FROM p.transaction_date) = :year" +
-                        (month != null ? " AND EXTRACT(MONTH FROM p.transaction_date) = :month" : "");
+        String revSql = "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+                + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :agencyId "
+                + "AND EXTRACT(YEAR FROM p.transaction_date) = :year"
+                + (month != null ? " AND EXTRACT(MONTH FROM p.transaction_date) = :month" : "");
 
         DatabaseClient.GenericExecuteSpec revSpec = databaseClient.sql(revSql)
             .bind("agencyId", agencyId)
             .bind("year", year);
-        if (month != null) revSpec = revSpec.bind("month", month);
+        if (month != null) {
+            revSpec = revSpec.bind("month", month);
+        }
 
         Mono<BigDecimal> revenueMono = revSpec.map((row, meta) -> row.get(0, BigDecimal.class)).one();
 
-        String countsSql = "SELECT status, COUNT(*) as count FROM rentals WHERE agency_id = :agencyId AND " + dateFilterNoAlias + " GROUP BY status";
+        String countsSql = "SELECT status, COUNT(*) as count FROM rentals WHERE agency_id = :agencyId AND "
+                + dateFilterNoAlias + " GROUP BY status";
         DatabaseClient.GenericExecuteSpec countsSpec = databaseClient.sql(countsSql)
             .bind("agencyId", agencyId)
             .bind("year", year);
-        if (month != null) countsSpec = countsSpec.bind("month", month);
+        if (month != null) {
+            countsSpec = countsSpec.bind("month", month);
+        }
 
         Mono<Map<String, Long>> rentalCountsMono = countsSpec.fetch().all().collectMap(
             row -> (String) row.get("status"),
             row -> (Long) row.get("count")
         );
 
-        String topVehSql = "SELECT v.brand || ' ' || v.model as name, COUNT(*) as count FROM rentals r JOIN vehicles v ON r.vehicle_id = v.id WHERE r.agency_id = :agencyId AND " + dateFilter + " GROUP BY v.brand, v.model ORDER BY count DESC LIMIT 5";
+        String topVehSql = "SELECT v.brand || ' ' || v.model as name, COUNT(*) as count "
+                + "FROM rentals r JOIN vehicles v ON r.vehicle_id = v.id "
+                + "WHERE r.agency_id = :agencyId AND " + dateFilter
+                + " GROUP BY v.brand, v.model ORDER BY count DESC LIMIT 5";
         DatabaseClient.GenericExecuteSpec topVehSpec = databaseClient.sql(topVehSql)
             .bind("agencyId", agencyId)
             .bind("year", year);
-        if (month != null) topVehSpec = topVehSpec.bind("month", month);
+        if (month != null) {
+            topVehSpec = topVehSpec.bind("month", month);
+        }
 
         Mono<Map<String, Long>> topVehiclesMono = topVehSpec.fetch().all().collectMap(
             row -> (String) row.get("name"),

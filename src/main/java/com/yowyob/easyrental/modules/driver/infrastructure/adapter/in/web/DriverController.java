@@ -1,7 +1,7 @@
 package com.yowyob.easyrental.modules.driver.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.driver.dto.DriverResponseDTO;
-import com.yowyob.easyrental.modules.driver.application.DriverUseCaseImpl;
+import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
 import com.yowyob.easyrental.modules.driver.dto.DriverDetailResponseDTO;
@@ -14,7 +14,16 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -27,7 +36,7 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class DriverController {
 
-    private final DriverUseCaseImpl driverUseCaseImpl;
+    private final DriverUseCase driverUseCase;
 
     @Operation(summary = "Créer un conducteur avec fichiers (Profil, CNI, Permis)")
     @PostMapping(value = "/org/{orgId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -58,7 +67,7 @@ public class DriverController {
         Integer age = Integer.parseInt(ageStr);
         Integer gender = Integer.parseInt(genderStr);
 
-        return driverUseCaseImpl.createDriver(
+        return driverUseCase.createDriver(
                 orgId, agencyId, firstname, lastname, tel, age, gender,
                 profilFile, cniFile, licenseFile
         ).map(ResponseEntity::ok);
@@ -67,25 +76,25 @@ public class DriverController {
     @Operation(summary = "Lister les conducteurs d'une organisation")
     @GetMapping("/org/{orgId}")
     public Flux<DriverResponseDTO> getByOrg(@PathVariable UUID orgId) {
-        return driverUseCaseImpl.getDriversByOrg(orgId);
+        return driverUseCase.getDriversByOrg(orgId);
     }
 
     @Operation(summary = "Lister les conducteurs d'une agence")
     @GetMapping("/agency/{agencyId}")
     public Flux<DriverResponseDTO> getByAgency(@PathVariable UUID agencyId) {
-        return driverUseCaseImpl.getDriversByAgency(agencyId);
+        return driverUseCase.getDriversByAgency(agencyId);
     }
 
     @Operation(summary = "Détails d'un conducteur")
     @GetMapping("/{id}")
     public Mono<ResponseEntity<DriverResponseDTO>> getById(@PathVariable UUID id) {
-        return driverUseCaseImpl.getDriverById(id).map(ResponseEntity::ok);
+        return driverUseCase.getDriverById(id).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Obtenir les détails complets (Planning + Prix) d'un conducteur")
     @GetMapping("/{id}/details")
     public Mono<ResponseEntity<DriverDetailResponseDTO>> getDriverDetails(@PathVariable UUID id) {
-        return driverUseCaseImpl.getDriverDetails(id).map(ResponseEntity::ok);
+        return driverUseCase.getDriverDetails(id).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Mettre à jour le prix du chauffeur")
@@ -94,7 +103,7 @@ public class DriverController {
     public Mono<ResponseEntity<DriverDetailResponseDTO>> updatePricing(
             @PathVariable UUID id,
             @RequestBody PricingUpdateDTO request) {
-        return driverUseCaseImpl.updateDriverPricing(id, request).map(ResponseEntity::ok);
+        return driverUseCase.updateDriverPricing(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Ajouter des indisponibilités (Planning) au chauffeur")
@@ -103,7 +112,7 @@ public class DriverController {
     public Mono<ResponseEntity<DriverDetailResponseDTO>> updateSchedule(
             @PathVariable UUID id,
             @RequestBody ScheduleUpdateDTO request) {
-        return driverUseCaseImpl.updateDriverSchedules(id, request).map(ResponseEntity::ok);
+        return driverUseCase.updateDriverSchedules(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Changer l'agence d'un conducteur")
@@ -112,13 +121,13 @@ public class DriverController {
     public Mono<ResponseEntity<DriverResponseDTO>> changeAgency(
             @PathVariable UUID id,
             @RequestParam UUID newAgencyId) {
-        return driverUseCaseImpl.changeAgency(id, newAgencyId).map(ResponseEntity::ok);
+        return driverUseCase.changeAgency(id, newAgencyId).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Supprimer un conducteur")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ORGANIZATION')")
     public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
-        return driverUseCaseImpl.deleteDriver(id).then(Mono.just(ResponseEntity.noContent().build()));
+        return driverUseCase.deleteDriver(id).then(Mono.just(ResponseEntity.noContent().build()));
     }
 }

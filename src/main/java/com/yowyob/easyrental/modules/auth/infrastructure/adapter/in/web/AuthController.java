@@ -1,14 +1,20 @@
 package com.yowyob.easyrental.modules.auth.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
-import com.yowyob.easyrental.modules.auth.dto.*;
-import com.yowyob.easyrental.modules.auth.application.AuthUseCaseImpl;
+import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
+import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
+import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
+import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.dto.OrgRegisterRequest;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.server.ServerWebExchange;
@@ -18,17 +24,17 @@ import org.springframework.web.server.ServerWebExchange;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final AuthUseCaseImpl authUseCaseImpl;
+    private final AuthUseCase authUseCase;
 
     @PostMapping("/login")
     public Mono<ResponseEntity<AuthResponse>> login(@RequestBody LoginRequest request) {
-        return authUseCaseImpl.login(request).map(ResponseEntity::ok);
+        return authUseCase.login(request).map(ResponseEntity::ok);
     }
 
     // Récupérer l'utilisateur connecté
     @GetMapping("/me")
     public Mono<ResponseEntity<UserEntity>> me() {
-        return authUseCaseImpl.getCurrentUser()
+        return authUseCase.getCurrentUser()
                 .map(ResponseEntity::ok);
     }
 
@@ -36,19 +42,19 @@ public class AuthController {
     @PostMapping("/refresh")
     public Mono<ResponseEntity<AuthResponse>> refresh(ServerWebExchange exchange) {
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        return authUseCaseImpl.refreshToken(authHeader)
+        return authUseCase.refreshToken(authHeader)
                 .map(ResponseEntity::ok);
     }
 
     @PostMapping("/register/client")
     public Mono<ResponseEntity<UserEntity>> registerClient(@RequestBody RegisterRequest request) {
-        return authUseCaseImpl.registerClient(request)
+        return authUseCase.registerClient(request)
                 .map(ResponseEntity::ok);
     }
 
     @PostMapping("/register/organizationOwner")
     public Mono<ResponseEntity<OrganizationEntity>> registerOrganization(@RequestBody OrgRegisterRequest request) {
-        return authUseCaseImpl.registerOrganization(request)
+        return authUseCase.registerOrganization(request)
                 .map(ResponseEntity::ok);
     }
 }

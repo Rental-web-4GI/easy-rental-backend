@@ -1,7 +1,7 @@
 package com.yowyob.easyrental.modules.permission.infrastructure.adapter.in.web;
 
-import com.yowyob.easyrental.modules.permission.domain.PermissionEntity;
-import com.yowyob.easyrental.modules.permission.infrastructure.adapter.out.persistence.PermissionRepository;
+import com.yowyob.easyrental.modules.permission.domain.port.in.PermissionUseCase;
+import com.yowyob.easyrental.modules.permission.dto.PermissionResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,11 +18,11 @@ import reactor.core.publisher.Flux;
 @SecurityRequirement(name = "bearerAuth")
 public class PermissionController {
 
-    private final PermissionRepository permissionRepository;
+    private final PermissionUseCase permissionUseCase;
 
     @Operation(summary = "Lister toutes les permissions disponibles")
     @GetMapping
-    public Flux<PermissionEntity> getAllPermissions() {
-        return permissionRepository.findAll();
+    public Flux<PermissionResponseDTO> getAllPermissions() {
+        return permissionUseCase.getAllPermissions();
     }
 }

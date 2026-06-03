@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
 import com.yowyob.easyrental.modules.vehicle.domain.VehicleCategoryEntity;
 import com.yowyob.easyrental.modules.vehicle.domain.VehicleEntity;
-import com.yowyob.easyrental.modules.vehicle.dto.*;
+import com.yowyob.easyrental.modules.vehicle.dto.EngineDTO;
+import com.yowyob.easyrental.modules.vehicle.dto.FonctionnalitiesDTO;
+import com.yowyob.easyrental.modules.vehicle.dto.FuelEfficiencyDTO;
+import com.yowyob.easyrental.modules.vehicle.dto.InsuranceDTO;
+import com.yowyob.easyrental.modules.vehicle.dto.VehicleResponseDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +19,9 @@ public class VehicleMapper {
     private final ObjectMapper objectMapper;
 
     public VehicleResponseDTO toDto(VehicleEntity entity, VehicleCategoryEntity category, PricingEntity pricing) {
-        if (entity == null) return null;
+        if (entity == null) {
+            return null;
+        }
 
         try {
             // Désérialisation des champs JSONB

@@ -9,7 +9,9 @@ import org.springframework.stereotype.Component;
 public class StaffMapper {
 
     public StaffResponseDTO toDto(UserEntity user, PosteResponseDTO poste) {
-        if (user == null) return null;
+        if (user == null) {
+            return null;
+        }
 
         return new StaffResponseDTO(
             user.getId(),

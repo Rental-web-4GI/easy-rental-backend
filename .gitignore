@@ -30,7 +30,7 @@ build/
 !**/src/test/**/build/
 
 ### VS Code ###
-.vscode/
+# .vscode/ (commenté pour permettre le versionnement de la configuration Java 21)
 
 ### environment files ###
 .env

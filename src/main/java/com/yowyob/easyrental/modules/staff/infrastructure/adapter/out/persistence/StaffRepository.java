@@ -17,7 +17,7 @@ public interface StaffRepository extends R2dbcRepository<UserEntity, UUID> {
      * Utilisé pour vérifier si un utilisateur est déjà employé dans une
      * organisation précise
      */
-    Mono<UserEntity> findByIdAndOrganizationId(UUID Id, UUID organizationId);
+    Mono<UserEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
     /**
      * Récupérer tout le personnel d'une agence
@@ -54,5 +54,5 @@ public interface StaffRepository extends R2dbcRepository<UserEntity, UUID> {
                 AND s.organization_id = :orgId
                 AND perm.tag = :permissionTag
             """)
-    Mono<Boolean> checkStaffPermission(UUID Id, UUID orgId, String permissionTag);
+    Mono<Boolean> checkStaffPermission(UUID id, UUID orgId, String permissionTag);
 }

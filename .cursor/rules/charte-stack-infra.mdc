@@ -1,0 +1,52 @@
+---
+description: Charte Stack Infrastructure — DevOps, Bases de données, CI/CD
+alwaysApply: true
+---
+
+# Charte Stack Infrastructure
+
+## Backend Stack
+- **Language**: Java 21
+- **Framework**: Spring Boot 3.4 WebFlux (réactif)
+- **Build**: Maven 3.9+
+- **JDK**: Eclipse Temurin 21 (Alpine pour Docker)
+
+## Bases de Données
+- **Relationnelle**: PostgreSQL 16+ avec PostGIS (données géospatiales)
+- **Cache**: Redis 7+ (sessions, cache distribué)
+- **Search**: Elasticsearch 8+ (recherche全文, logs)
+- **Messaging**: Kafka 3+ (événements, async processing)
+
+## DevOps & CI/CD
+- **Containerisation**: Docker + Docker Compose (local)
+- **Orchestration**: Kubernetes (production)
+- **CI/CD**: GitHub Actions
+- **Monitoring**: Prometheus + Grafana
+- **Logging**: ELK Stack (Elasticsearch + Logstash + Kibana)
+
+## Docker Conventions
+- Images multi-stage pour optimiser la taille
+- Utiliser Alpine Linux quand possible
+- Variables d'environnement pour la configuration
+- Health checks pour tous les services
+- Volume management pour les données persistantes
+
+## Configuration
+- **Profiles**: dev, test, prod
+- **Config Server**: Spring Cloud Config (optionnel)
+- **Secrets**: HashiCorp Vault ou Kubernetes Secrets
+- **Environment Variables**: Préférer aux fichiers config
+
+## Sécurité
+- HTTPS/TLS en production
+- JWT pour l'authentification
+- RBAC pour l'autorisation
+- Rate limiting sur les API
+- CORS configuré correctement
+- Secrets jamais commités dans Git
+
+## Monitoring & Observabilité
+- Metrics: Spring Boot Actuator + Micrometer
+- Tracing: OpenTelemetry + Jaeger
+- Logging: Structured logs (JSON) + ELK
+- Alerts: Prometheus Alertmanager

@@ -1,0 +1,68 @@
+---
+description: État d'audit Easy Rental — architecture hexagonale, charte, qualité (mis à jour 2026-06-03)
+alwaysApply: true
+---
+
+# Easy Rental — État du projet (audit)
+
+## Métier
+
+Plateforme SaaS **B2B2C** location de véhicules (Cameroun, XAF). Trois consoles frontend :
+- **Organisation** (`mfe-organisation`) — propriétaire, flotte, agences, abonnement
+- **Agence** (`mfe-agency`) — opérations terrain, RBAC staff
+- **Client** (`mfe-client`) — catalogue, réservations, PWA
+
+Backend : `easy-rental-backend` (Spring Boot 3.4 WebFlux, R2DBC, JWT).  
+Frontend : `easy-rental-frontend` (monorepo Turbo, 4 apps Next.js, pas de Module Federation).
+
+## Architecture hexagonale — score réel
+
+| Critère | État |
+|---------|------|
+| Structure dossiers (domain/application/infrastructure) | ✅ 18 modules |
+| Ports entrants (`*UseCase`) | ✅ ~21 interfaces |
+| Ports sortants (`*RepositoryPort` + adapters) | ✅ **18 ports + 18 adapters** (tous modules avec persistence) |
+| Controllers → interfaces UseCase | ✅ **17/18** injectent `*UseCase` (plus `*UseCaseImpl`) |
+| Controllers → repository direct | ✅ **0** (Category, Permission, Subscription, Organization, Poste, Transaction corrigés) |
+| UseCaseImpl → Repository direct | ✅ **0** — tous passent par `*RepositoryPort` |
+| UseCaseImpl → autres `*UseCaseImpl` | ✅ **0** — tous les couplages cross-module passent par `*UseCase` |
+
+**Modules de référence** : `rental` (`RentalRepositoryPort`, `AuthUserPort`), pattern répliqué sur les 18 modules.
+
+## Charte v0.1 — conformité estimée
+
+| Zone | % | Détail |
+|------|---|--------|
+| Stack backend (WebFlux, Liquibase, Redis, Kafka, ES) | ~70 % | Dépendances présentes ; ES/Kafka peu utilisés en métier |
+| Stack frontend (Next, PWA, cartes, DuckDB) | ~45 % | Next OK ; shadcn/RHF/Zod absents ; DuckDB squelette |
+| Naming / namespace `com.yowyob.easyrental` | ~90 % | `spring.application.name=easyrental` en local/docker |
+| Javadoc §3 | ~15 % | Quasi absent sur classes publiques |
+| Tests 80 % §6 | **~80 % (check)** | **189 tests** (188 passent, 1 ignoré) ; **seuil charte 80 % actif** |
+| Checkstyle / PMD | ✅ enforce | `checkstyle.skip=false`, `pmd.skip=false` — 0 violation |
+| Hexagonal (exigence prof) | ~75 % | Ports out OK ; couplage UseCaseImpl résolu (Phase 2D) |
+
+## Qualité Maven (pom.xml)
+
+- `jacoco.skip=false` — rapport HTML généré
+- `jacoco.check.skip=false` — **seuil charte 80 %** (`jacoco.minimum.coverage=0.80`)
+- `checkstyle.skip=false`, `pmd.skip=false`
+- `./mvnw clean verify` → **BUILD SUCCESS** (2026-06-03, charte 80 %)
+- Tests : **188 passent**, 1 ignoré (`EasyRentalApplicationTests` — contexte Spring/PostgreSQL)
+- Couverture JaCoCo périmètre check : **~80 %+** lignes (excl. dto, config, entities, mappers, controllers)
+- Rapport HTML global (`target/site/jacoco/index.html`) : **~52 %** — inclut controllers/mappers exclus du gate
+- IDE : mapping m2e ajouté (checkstyle/pmd/jacoco) ; settings Java 21 + auto-update Maven
+
+## Stabilisation IDE (532 problèmes — résolu)
+
+Les ~532 erreurs IDE étaient majoritairement des **fantômes JLS** (index désynchronisé pendant migration ports).  
+Vrais blocages corrigés :
+- `RentalUseCaseImplTest` — `isAllowed()` au lieu de `success()`
+- `StatisticsUseCaseImplTest` — mocks R2DBC (`Function`/`BiFunction` + `FetchSpec`)
+- `NotificationUseCaseImplTest` — args format template `PAYMENT_RECEIVED_CLIENT`
+
+Action manuelle recommandée : **Java: Clean Java Language Server Workspace** puis reload.
+
+## Prochaines priorités (plan principal)
+
+1. Lancer backend local (`docker compose` + profile `local`, port 8081)
+2. Javadoc §3, frontend charte, ES/Kafka métier (hors couverture backend)

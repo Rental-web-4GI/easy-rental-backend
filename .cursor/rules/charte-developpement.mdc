@@ -1,0 +1,51 @@
+---
+description: Charte de Développement v0.1 — conventions code, docs, tests, Git (Thomas Djotio Ndié)
+alwaysApply: true
+---
+
+# Charte de Développement Easy Rental
+
+Source officielle : `Charte de Développement et contraintes Technologiques.pdf` (racine dépôt) — règle complète : `.cursor/rules/charte-officielle-v01.mdc`.
+
+## Naming (§1)
+- Charte PDF : variables **snake_case** ; méthodes **camelCase**
+- **Java (ce projet)** : variables/champs **camelCase** ; méthodes **camelCase**
+- DB (Liquibase) & JSON/API : **snake_case** (`user_name`, `order_date`)
+- Constants: **UPPER_SNAKE_CASE** (`MAX_SIZE`, `DEPOSIT_RATE`)
+- Classes: **PascalCase** (`CustomerService`)
+- Packages: lowercase, no accents (`com.yowyob.easyrental.rental`)
+- Interfaces: no `I` prefix (`PaymentProcessor`, not `IPaymentProcessor`)
+
+## Code organization (§2)
+- One public class per file
+- Max line length: **120 characters**
+- Indentation: **4 spaces** (no tabs)
+- Opening brace on same line: `if (condition) {`
+- **No wildcard imports** (`import java.util.*` forbidden)
+
+## Documentation (§3)
+- Every public class: Javadoc header with description, `@author`, `@since`
+- Public methods: `@param`, `@return`, `@throws`
+- Comments in **English only**
+
+## Exceptions (§4)
+- Use specific exceptions, never generic `Exception`/`RuntimeException` in business code
+- Error messages in **English**
+- Propagate only when relevant; handle locally otherwise
+
+## Best practices (§5)
+- SOLID principles; Controller → UseCase → Port (hexagonal)
+- No magic numbers — use constants in `shared/constants/`
+- Prefer primitives over wrappers unless needed
+- Use `Optional` or reactive `Mono` for absent values
+- Never log passwords, tokens, or sensitive data
+
+## Tests (§6)
+- JUnit 5 for every new feature
+- Minimum **80% coverage** (JaCoCo enforced)
+- Test names: `shouldReturnErrorWhenInputIsInvalid`
+- Use Checkstyle, PMD, SonarLint
+
+## Git (§7)
+- One feature = one branch: `feature/`, `bugfix/`, `hotfix/`
+- Commits in English, imperative mood: `Add payment gateway integration`

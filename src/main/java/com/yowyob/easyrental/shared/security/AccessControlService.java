@@ -32,8 +32,9 @@ public class AccessControlService {
                 .map(ctx -> ctx.getAuthentication().getName())
                 .flatMap(userRepository::findByEmail)
                 .flatMap(user -> {
-                    if ("ADMIN".equals(user.getRole()))
+                    if ("ADMIN".equals(user.getRole())) {
                         return Mono.just(true);
+                    }
                     if ("ORGANIZATION".equals(user.getRole())) {
                         return organizationRepository.findById(Objects.requireNonNull(orgId))
                                 .map(org -> org.getOwnerId().equals(user.getId()))

@@ -1,7 +1,7 @@
 package com.yowyob.easyrental.modules.pricing.application;
 
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
-import com.yowyob.easyrental.modules.pricing.infrastructure.adapter.out.persistence.PricingRepository;
+import com.yowyob.easyrental.modules.pricing.domain.port.out.PricingRepositoryPort;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import lombok.RequiredArgsConstructor;
@@ -14,9 +14,14 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class PricingUseCaseImpl implements PricingUseCase {
-    private final PricingRepository pricingRepository;
+    private final PricingRepositoryPort pricingRepository;
 
-    public Mono<PricingEntity> setPricing(UUID orgId, ResourceType type, UUID resourceId, BigDecimal perHour, BigDecimal perDay) {
+    public Mono<PricingEntity> setPricing(
+            UUID orgId,
+            ResourceType type,
+            UUID resourceId,
+            BigDecimal perHour,
+            BigDecimal perDay) {
         return pricingRepository.findByResourceTypeAndResourceId(type, resourceId)
             .defaultIfEmpty(PricingEntity.builder()
                 .id(UUID.randomUUID())

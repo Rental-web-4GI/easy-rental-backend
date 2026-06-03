@@ -2,7 +2,10 @@ package com.yowyob.easyrental.modules.vehicle.domain;
 
 import io.r2dbc.postgresql.codec.Json;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;

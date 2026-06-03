@@ -1,15 +1,17 @@
 package com.yowyob.easyrental.modules.staff.application;
 
-import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
-import com.yowyob.easyrental.modules.organization.infrastructure.adapter.out.persistence.OrganizationRepository;
-import com.yowyob.easyrental.modules.organization.application.OrganizationUseCaseImpl;
-import com.yowyob.easyrental.modules.poste.application.PosteUseCaseImpl;
-import com.yowyob.easyrental.modules.staff.dto.*;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
+import com.yowyob.easyrental.modules.poste.domain.port.in.PosteUseCase;
+import com.yowyob.easyrental.modules.staff.dto.StaffRequestDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffResponseDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffUpdateDTO;
 import com.yowyob.easyrental.modules.staff.mapper.StaffMapper;
-import com.yowyob.easyrental.modules.staff.infrastructure.adapter.out.persistence.StaffRepository;
-import com.yowyob.easyrental.modules.subscription.infrastructure.adapter.out.persistence.SubscriptionPlanRepository;
+import com.yowyob.easyrental.modules.staff.domain.port.out.StaffRepositoryPort;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.shared.events.AuditEvent;
 import com.yowyob.easyrental.modules.staff.domain.port.in.StaffUseCase;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +30,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class StaffUseCaseImpl implements StaffUseCase {
 
-    private final StaffRepository staffRepository;
-    private final OrganizationRepository organizationRepository;
-    private final SubscriptionPlanRepository planRepository;
-    private final OrganizationUseCaseImpl organizationService;
-    private final AgencyRepository agencyRepository;
-    private final PosteUseCaseImpl posteService;
+    private final StaffRepositoryPort staffRepository;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final SubscriptionPlanRepositoryPort planRepository;
+    private final OrganizationUseCase organizationService;
+    private final AgencyRepositoryPort agencyRepository;
+    private final PosteUseCase posteService;
     private final StaffMapper staffMapper;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
@@ -140,14 +142,18 @@ public class StaffUseCaseImpl implements StaffUseCase {
                     }
 
                     // 2. Mise à jour des champs basiques
-                    if (request.firstname() != null)
+                    if (request.firstname() != null) {
                         user.setFirstname(request.firstname());
-                    if (request.lastname() != null)
+                    }
+                    if (request.lastname() != null) {
                         user.setLastname(request.lastname());
-                    if (request.posteId() != null)
+                    }
+                    if (request.posteId() != null) {
                         user.setPosteId(request.posteId());
-                    if (request.status() != null)
+                    }
+                    if (request.status() != null) {
                         user.setStatus(request.status());
+                    }
 
                     // Recalculer le fullname si nécessaire
                     user.setFullname(user.getFirstname() + " " + user.getLastname());

@@ -1,11 +1,11 @@
 package com.yowyob.easyrental.modules.review.application;
 
-import com.yowyob.easyrental.modules.driver.infrastructure.adapter.out.persistence.DriverRepository;
+import com.yowyob.easyrental.modules.driver.domain.port.out.DriverRepositoryPort;
 import com.yowyob.easyrental.modules.review.domain.ReviewEntity;
 import com.yowyob.easyrental.modules.review.dto.ReviewRequestDTO;
 import com.yowyob.easyrental.modules.review.dto.ReviewResponseDTO;
-import com.yowyob.easyrental.modules.review.infrastructure.adapter.out.persistence.ReviewRepository;
-import com.yowyob.easyrental.modules.vehicle.infrastructure.adapter.out.persistence.VehicleRepository;
+import com.yowyob.easyrental.modules.review.domain.port.out.ReviewRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.modules.review.domain.port.in.ReviewUseCase;
 import lombok.RequiredArgsConstructor;
@@ -21,9 +21,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReviewUseCaseImpl implements ReviewUseCase {
 
-    private final ReviewRepository reviewRepository;
-    private final VehicleRepository vehicleRepository;
-    private final DriverRepository driverRepository;
+    private final ReviewRepositoryPort reviewRepository;
+    private final VehicleRepositoryPort vehicleRepository;
+    private final DriverRepositoryPort driverRepository;
 
     @Transactional
     public Mono<ReviewResponseDTO> addReview(ReviewRequestDTO request) {

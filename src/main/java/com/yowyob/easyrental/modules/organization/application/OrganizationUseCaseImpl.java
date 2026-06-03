@@ -1,14 +1,16 @@
 package com.yowyob.easyrental.modules.organization.application;
 
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
-import com.yowyob.easyrental.modules.media.application.MediaUseCaseImpl;
+import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
 import com.yowyob.easyrental.modules.organization.dto.OrgResponseDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUpdateDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUserResponseDTO;
 import com.yowyob.easyrental.modules.organization.mapper.OrgMapper;
-import com.yowyob.easyrental.modules.organization.infrastructure.adapter.out.persistence.OrganizationRepository;
-import com.yowyob.easyrental.modules.subscription.infrastructure.adapter.out.persistence.SubscriptionPlanRepository;
-import com.yowyob.easyrental.modules.auth.infrastructure.adapter.out.persistence.UserRepository;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
+import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
+import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
+import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.codec.multipart.FilePart;
@@ -24,11 +26,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OrganizationUseCaseImpl implements OrganizationUseCase {
 
-    private final OrganizationRepository organizationRepository;
-    private final SubscriptionPlanRepository planRepository;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final SubscriptionPlanRepositoryPort planRepository;
     private final OrgMapper orgMapper;
-    private final MediaUseCaseImpl mediaService;
-    private final UserRepository userRepository;
+    private final MediaUseCase mediaService;
+    private final UserRepositoryPort userRepository;
+    private final SubscriptionUseCase subscriptionUseCase;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -44,19 +47,45 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     public Mono<OrgResponseDTO> updateOrganization(UUID id, OrgUpdateDTO request) {
         return organizationRepository.findById(id)
                 .flatMap(org -> {
-                    if (hasText(request.name())) org.setName(request.name());
-                    if (hasText(request.description())) org.setDescription(request.description());
-                    if (hasText(request.address())) org.setAddress(request.address());
-                    if (hasText(request.city())) org.setCity(request.city());
-                    if (hasText(request.postalCode())) org.setPostalCode(request.postalCode());
-                    if (hasText(request.region())) org.setRegion(request.region());
-                    if (hasText(request.phone())) org.setPhone(request.phone());
-                    if (hasText(request.email())) org.setEmail(request.email());
-                    if (hasText(request.website())) org.setWebsite(request.website());
-                    if (hasText(request.timezone())) org.setTimezone(request.timezone());
-                    if (hasText(request.logoUrl())) org.setLogoUrl(request.logoUrl());
-                    if (hasText(request.registrationNumber())) org.setRegistrationNumber(request.registrationNumber());
-                    if (hasText(request.taxNumber())) org.setTaxNumber(request.taxNumber());
+                    if (hasText(request.name())) {
+                        org.setName(request.name());
+                    }
+                    if (hasText(request.description())) {
+                        org.setDescription(request.description());
+                    }
+                    if (hasText(request.address())) {
+                        org.setAddress(request.address());
+                    }
+                    if (hasText(request.city())) {
+                        org.setCity(request.city());
+                    }
+                    if (hasText(request.postalCode())) {
+                        org.setPostalCode(request.postalCode());
+                    }
+                    if (hasText(request.region())) {
+                        org.setRegion(request.region());
+                    }
+                    if (hasText(request.phone())) {
+                        org.setPhone(request.phone());
+                    }
+                    if (hasText(request.email())) {
+                        org.setEmail(request.email());
+                    }
+                    if (hasText(request.website())) {
+                        org.setWebsite(request.website());
+                    }
+                    if (hasText(request.timezone())) {
+                        org.setTimezone(request.timezone());
+                    }
+                    if (hasText(request.logoUrl())) {
+                        org.setLogoUrl(request.logoUrl());
+                    }
+                    if (hasText(request.registrationNumber())) {
+                        org.setRegistrationNumber(request.registrationNumber());
+                    }
+                    if (hasText(request.taxNumber())) {
+                        org.setTaxNumber(request.taxNumber());
+                    }
 
                     return organizationRepository.save(org);
                 })
@@ -64,7 +93,8 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     }
 
     @Transactional
-    public Mono<OrgResponseDTO> updateOrganizationWithMedia(UUID id, OrgUpdateDTO request, FilePart logoFile, FilePart licenseFile) {
+    public Mono<OrgResponseDTO> updateOrganizationWithMedia(UUID id, OrgUpdateDTO request, FilePart logoFile,
+            FilePart licenseFile) {
         return organizationRepository.findById(id)
                 .flatMap(org -> {
                     Mono<String> logoMono = (logoFile != null)
@@ -81,21 +111,49 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                                 String newLicenseUrl = tuple.getT2();
 
                                 // CORRECTION : On ne met à jour que si le texte n'est pas vide
-                                if (hasText(request.name())) org.setName(request.name());
-                                if (hasText(request.description())) org.setDescription(request.description());
-                                if (hasText(request.phone())) org.setPhone(request.phone());
-                                if (hasText(request.email())) org.setEmail(request.email());
-                                if (hasText(request.address())) org.setAddress(request.address());
-                                if (hasText(request.city())) org.setCity(request.city());
-                                if (hasText(request.postalCode())) org.setPostalCode(request.postalCode());
-                                if (hasText(request.region())) org.setRegion(request.region());
-                                if (hasText(request.website())) org.setWebsite(request.website());
-                                if (hasText(request.timezone())) org.setTimezone(request.timezone());
-                                if (hasText(request.registrationNumber())) org.setRegistrationNumber(request.registrationNumber());
-                                if (hasText(request.taxNumber())) org.setTaxNumber(request.taxNumber());
+                                if (hasText(request.name())) {
+                                    org.setName(request.name());
+                                }
+                                if (hasText(request.description())) {
+                                    org.setDescription(request.description());
+                                }
+                                if (hasText(request.phone())) {
+                                    org.setPhone(request.phone());
+                                }
+                                if (hasText(request.email())) {
+                                    org.setEmail(request.email());
+                                }
+                                if (hasText(request.address())) {
+                                    org.setAddress(request.address());
+                                }
+                                if (hasText(request.city())) {
+                                    org.setCity(request.city());
+                                }
+                                if (hasText(request.postalCode())) {
+                                    org.setPostalCode(request.postalCode());
+                                }
+                                if (hasText(request.region())) {
+                                    org.setRegion(request.region());
+                                }
+                                if (hasText(request.website())) {
+                                    org.setWebsite(request.website());
+                                }
+                                if (hasText(request.timezone())) {
+                                    org.setTimezone(request.timezone());
+                                }
+                                if (hasText(request.registrationNumber())) {
+                                    org.setRegistrationNumber(request.registrationNumber());
+                                }
+                                if (hasText(request.taxNumber())) {
+                                    org.setTaxNumber(request.taxNumber());
+                                }
 
-                                if (hasText(newLogoUrl)) org.setLogoUrl(newLogoUrl);
-                                if (hasText(newLicenseUrl)) org.setBusinessLicense(newLicenseUrl);
+                                if (hasText(newLogoUrl)) {
+                                    org.setLogoUrl(newLogoUrl);
+                                }
+                                if (hasText(newLicenseUrl)) {
+                                    org.setBusinessLicense(newLicenseUrl);
+                                }
 
                                 boolean isProfileComplete = checkProfileCompleteness(org);
                                 org.setIsVerified(isProfileComplete);
@@ -117,17 +175,25 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
         return str != null && !str.trim().isEmpty();
     }
 
+    @Override
     @Transactional public Mono<Void> updateAgencyCounter(UUID orgId, int increment) {
-        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentAgencies(org.getCurrentAgencies() + increment); return organizationRepository.save(org); }).then();
+        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentAgencies(org
+                .getCurrentAgencies() + increment); return organizationRepository.save(org); }).then();
     }
+    @Override
     @Transactional public Mono<Void> updateStaffCounter(UUID orgId, int increment) {
-        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentUsers(org.getCurrentUsers() + increment); return organizationRepository.save(org); }).then();
+        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentUsers(org
+                .getCurrentUsers() + increment); return organizationRepository.save(org); }).then();
     }
+    @Override
     @Transactional public Mono<Void> updateVehicleCounter(UUID orgId, int increment) {
-        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentVehicles(org.getCurrentVehicles() + increment); return organizationRepository.save(org); }).then();
+        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentVehicles(org
+                .getCurrentVehicles() + increment); return organizationRepository.save(org); }).then();
     }
+    @Override
     @Transactional public Mono<Void> updateDriverCounter(UUID orgId, int increment) {
-        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentDrivers(org.getCurrentDrivers() + increment); return organizationRepository.save(org); }).then();
+        return organizationRepository.findById(orgId).flatMap(org -> { org.setCurrentDrivers(org
+                .getCurrentDrivers() + increment); return organizationRepository.save(org); }).then();
     }
 
     public Mono<Boolean> validateQuota(UUID orgId, String resourceType) {
@@ -150,5 +216,28 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
             .flatMap(user -> organizationRepository.findByOwnerId(user.getId())
                     .map(org -> new OrgUserResponseDTO(user, orgMapper.toDto(org)))
                     .defaultIfEmpty(new OrgUserResponseDTO(user, null)));
+    }
+
+    @Override
+    public Flux<OrgResponseDTO> getOrganizationsByPlan(UUID planId) {
+        return organizationRepository.findAllBySubscriptionPlanId(planId).map(orgMapper::toDto);
+    }
+
+    @Override
+    public Mono<SubscriptionResponseDTO> toggleAutoRenewWithResponse(UUID orgId, boolean enabled) {
+        return subscriptionUseCase.toggleAutoRenew(orgId, enabled)
+                .flatMap(subscriptionUseCase::buildSubscriptionResponse);
+    }
+
+    @Override
+    public Mono<SubscriptionResponseDTO> getOrgSubscriptionStatus(UUID orgId) {
+        return subscriptionUseCase.getOrgSubscriptionStatus(orgId);
+    }
+
+    @Override
+    public Mono<SubscriptionResponseDTO> upgradePlanWithResponse(UUID orgId, String planName) {
+        return subscriptionUseCase.upgradePlan(orgId, planName)
+                .flatMap(plan -> organizationRepository.findById(orgId)
+                        .flatMap(subscriptionUseCase::buildSubscriptionResponse));
     }
 }

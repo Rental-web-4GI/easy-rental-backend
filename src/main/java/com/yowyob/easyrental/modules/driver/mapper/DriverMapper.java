@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class DriverMapper {
     public DriverResponseDTO toDto(DriverEntity entity, PricingEntity pricing) {
-        if (entity == null) return null;
+        if (entity == null) {
+            return null;
+        }
         return new DriverResponseDTO(
             entity.getId(),
             entity.getOrganizationId(),

@@ -1,11 +1,12 @@
 package com.yowyob.easyrental.modules.poste.application;
 
-import com.yowyob.easyrental.modules.permission.infrastructure.adapter.out.persistence.PermissionRepository;
+import com.yowyob.easyrental.modules.permission.domain.port.out.PermissionRepositoryPort;
 import com.yowyob.easyrental.modules.poste.domain.PosteEntity;
 import com.yowyob.easyrental.modules.poste.dto.PosteRequestDTO;
 import com.yowyob.easyrental.modules.poste.dto.PosteResponseDTO;
-import com.yowyob.easyrental.modules.poste.infrastructure.adapter.out.persistence.PosteRepository;
+import com.yowyob.easyrental.modules.poste.domain.port.out.PosteRepositoryPort;
 import com.yowyob.easyrental.modules.poste.domain.port.in.PosteUseCase;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +21,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PosteUseCaseImpl implements PosteUseCase {
 
-    private final PosteRepository posteRepository;
-    private final PermissionRepository permissionRepository;
+    private final PosteRepositoryPort posteRepository;
+    private final PermissionRepositoryPort permissionRepository;
 
     @Transactional
     public Mono<PosteResponseDTO> createPoste(UUID orgId, PosteRequestDTO request) {
@@ -57,8 +58,15 @@ public class PosteUseCaseImpl implements PosteUseCase {
     public Mono<PosteResponseDTO> updatePoste(UUID posteId, PosteRequestDTO request) {
         return posteRepository.findById(Objects.requireNonNull(posteId))
                 .flatMap(poste -> {
-                    if (request.name() != null) poste.setName(request.name());
-                    if (request.description() != null) poste.setDescription(request.description());
+                    if (poste.getOrganizationId() == null) {
+                        return Mono.error(new ValidationException("Cannot update system default poste"));
+                    }
+                    if (request.name() != null) {
+                        poste.setName(request.name());
+                    }
+                    if (request.description() != null) {
+                        poste.setDescription(request.description());
+                    }
 
                     return posteRepository.save(Objects.requireNonNull(poste))
                             .flatMap(saved -> {

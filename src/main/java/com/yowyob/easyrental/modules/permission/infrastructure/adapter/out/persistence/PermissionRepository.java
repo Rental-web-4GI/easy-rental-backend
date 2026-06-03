@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public interface PermissionRepository extends R2dbcRepository<PermissionEntity, UUID> {
 
-    @Query("SELECT p.* FROM permissions p JOIN postes_permissions pp ON p.id = pp.permission_id WHERE pp.poste_id = :posteId")
+    @Query("SELECT p.* FROM permissions p JOIN postes_permissions pp ON p.id = pp.permission_id "
+            + "WHERE pp.poste_id = :posteId")
     Flux<PermissionEntity> findByPosteId(UUID posteId);
 }

@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgencyMapper {
     public AgencyResponseDTO toDto(AgencyEntity entity) {
-        if (entity == null) return null;
+        if (entity == null) {
+            return null;
+        }
         return new AgencyResponseDTO(
             entity.getId(),
             entity.getOrganizationId(),

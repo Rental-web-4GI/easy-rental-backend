@@ -1,11 +1,11 @@
 package com.yowyob.easyrental.modules.notification.application;
 
-import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.notification.domain.NotificationEntity;
 import com.yowyob.easyrental.modules.notification.domain.NotificationTemplate;
 import com.yowyob.easyrental.modules.notification.dto.NotificationResponseDTO;
 import com.yowyob.easyrental.modules.notification.mapper.NotificationMapper;
-import com.yowyob.easyrental.modules.notification.infrastructure.adapter.out.persistence.NotificationRepository;
+import com.yowyob.easyrental.modules.notification.domain.port.out.NotificationRepositoryPort;
 import com.yowyob.easyrental.shared.enums.NotificationReason;
 import com.yowyob.easyrental.shared.enums.NotificationResourceType;
 import com.yowyob.easyrental.modules.notification.domain.port.in.NotificationUseCase;
@@ -22,9 +22,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class NotificationUseCaseImpl implements NotificationUseCase {
 
-    private final NotificationRepository notificationRepository;
+    private final NotificationRepositoryPort notificationRepository;
     private final NotificationMapper notificationMapper;
-    private final AgencyRepository agencyRepository;
+    private final AgencyRepositoryPort agencyRepository;
 
     /**
      * Création de notification via TEMPLATE (Méthode recommandée)
@@ -99,7 +99,9 @@ public class NotificationUseCaseImpl implements NotificationUseCase {
                 .map(agency -> agency.getId())
                 .collectList()
                 .flatMapMany(ids -> {
-                    if (ids.isEmpty()) return Flux.empty();
+                    if (ids.isEmpty()) {
+                        return Flux.empty();
+                    }
                     return notificationRepository.findNotificationsByAgencyIds(ids);
                 })
                 .map(notificationMapper::toDto);
@@ -110,7 +112,9 @@ public class NotificationUseCaseImpl implements NotificationUseCase {
                 .map(agency -> agency.getId())
                 .collectList()
                 .flatMap(ids -> {
-                    if (ids.isEmpty()) return Mono.just(0L);
+                    if (ids.isEmpty()) {
+                        return Mono.just(0L);
+                    }
                     return notificationRepository.countUnreadByAgencyIds(ids);
                 });
     }

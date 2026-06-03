@@ -2,25 +2,25 @@ package com.yowyob.easyrental.modules.vehicle.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.postgresql.codec.Json;
-import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
-import com.yowyob.easyrental.modules.organization.infrastructure.adapter.out.persistence.OrganizationRepository;
-import com.yowyob.easyrental.modules.organization.application.OrganizationUseCaseImpl;
-import com.yowyob.easyrental.modules.subscription.infrastructure.adapter.out.persistence.SubscriptionPlanRepository;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.modules.vehicle.domain.VehicleCategoryEntity;
 import com.yowyob.easyrental.modules.vehicle.domain.VehicleEntity;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleRequestDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.mapper.VehicleMapper;
-import com.yowyob.easyrental.modules.vehicle.infrastructure.adapter.out.persistence.CategoryRepository;
-import com.yowyob.easyrental.modules.vehicle.infrastructure.adapter.out.persistence.VehicleRepository;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.CategoryRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleDetailResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
-import com.yowyob.easyrental.modules.pricing.application.PricingUseCaseImpl;
-import com.yowyob.easyrental.modules.schedule.application.ScheduleUseCaseImpl;
-import com.yowyob.easyrental.modules.review.application.ReviewUseCaseImpl;
+import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
+import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
+import com.yowyob.easyrental.modules.review.domain.port.in.ReviewUseCase;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.shared.events.AuditEvent;
 import com.yowyob.easyrental.modules.vehicle.domain.port.in.VehicleUseCase;
@@ -40,18 +40,18 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VehicleUseCaseImpl implements VehicleUseCase {
 
-    private final VehicleRepository vehicleRepository;
-    private final OrganizationRepository organizationRepository;
-    private final OrganizationUseCaseImpl organizationService;
-    private final SubscriptionPlanRepository planRepository;
-    private final CategoryRepository categoryRepository;
+    private final VehicleRepositoryPort vehicleRepository;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final OrganizationUseCase organizationService;
+    private final SubscriptionPlanRepositoryPort planRepository;
+    private final CategoryRepositoryPort categoryRepository;
     private final VehicleMapper vehicleMapper;
-    private final AgencyRepository agencyRepository;
+    private final AgencyRepositoryPort agencyRepository;
     private final ApplicationEventPublisher eventPublisher;
 
-    private final ScheduleUseCaseImpl scheduleService;
-    private final PricingUseCaseImpl pricingService;
-    private final ReviewUseCaseImpl reviewService;
+    private final ScheduleUseCase scheduleService;
+    private final PricingUseCase pricingService;
+    private final ReviewUseCase reviewService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -65,10 +65,13 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
                                         "Quota de véhicules atteint pour votre plan (" + plan.getName() + ")"));
                             }
                             try {
-                                Json functionalitiesJson = Json.of(objectMapper.writeValueAsString(request.functionalities()));
+                                Json functionalitiesJson = Json.of(objectMapper.writeValueAsString(request
+                                        .functionalities()));
                                 Json engineJson = Json.of(objectMapper.writeValueAsString(request.engineDetails()));
-                                Json fuelEfficiencyJson = Json.of(objectMapper.writeValueAsString(request.fuelEfficiency()));
-                                Json insuranceJson = Json.of(objectMapper.writeValueAsString(request.insuranceDetails()));
+                                Json fuelEfficiencyJson = Json.of(objectMapper.writeValueAsString(request
+                                        .fuelEfficiency()));
+                                Json insuranceJson = Json.of(objectMapper.writeValueAsString(request
+                                        .insuranceDetails()));
                                 Json descJson = Json.of(objectMapper.writeValueAsString(request.description()));
                                 Json imgsJson = Json.of(objectMapper.writeValueAsString(request.images()));
 
@@ -252,7 +255,8 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
     }
 
     private Mono<VehicleResponseDTO> enrichVehicle(VehicleEntity vehicle) {
-        Mono<VehicleCategoryEntity> categoryMono = categoryRepository.findById(Objects.requireNonNull(vehicle.getCategoryId()))
+        Mono<VehicleCategoryEntity> categoryMono = categoryRepository.findById(Objects.requireNonNull(vehicle
+                .getCategoryId()))
                 .defaultIfEmpty(VehicleCategoryEntity.builder().name("Unknown").build());
 
         Mono<PricingEntity> pricingMono = pricingService.getPricing(ResourceType.VEHICLE, vehicle.getId())

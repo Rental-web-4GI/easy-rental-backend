@@ -2,7 +2,10 @@ package com.yowyob.easyrental.modules.review.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.yowyob.easyrental.shared.enums.ResourceType;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
