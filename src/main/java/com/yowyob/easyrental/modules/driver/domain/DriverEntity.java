@@ -36,6 +36,11 @@ public class DriverEntity implements Persistable<UUID> {
     private String cniUrl;
     private String drivingLicenseUrl;
 
+    private String cniNumber;
+    private String licenseNumber;
+    private java.time.LocalDate licenseExpiry;
+    private Integer yearsExperience;
+
     @Builder.Default
     private String status = "ACTIVE"; // ACTIVE, INACTIVE
 

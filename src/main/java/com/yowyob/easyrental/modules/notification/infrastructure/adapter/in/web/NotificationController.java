@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -65,10 +66,27 @@ public class NotificationController {
         return notificationUseCase.countUnreadOrganization(orgId);
     }
 
-    @Operation(summary = "Marquer une notification comme lue")
+    @Operation(summary = "Marquer une notification comme lue (agence)")
+    @PutMapping("/{id}/read/agency")
+    public Mono<ResponseEntity<Void>> markAsReadAgency(@PathVariable UUID id) {
+        return notificationUseCase.markAsReadAgency(id)
+                .then(Mono.just(ResponseEntity.ok().build()));
+    }
+
+    @Operation(summary = "Marquer une notification comme lue (organisation)")
+    @PutMapping("/{id}/read/organization")
+    @PreAuthorize("hasRole('ORGANIZATION')")
+    public Mono<ResponseEntity<Void>> markAsReadOrganization(@PathVariable UUID id) {
+        return notificationUseCase.markAsReadOrganization(id)
+                .then(Mono.just(ResponseEntity.ok().build()));
+    }
+
+    @Operation(summary = "Marquer une notification comme lue (contexte explicite)")
     @PutMapping("/{id}/read")
-    public Mono<ResponseEntity<Void>> markAsRead(@PathVariable UUID id) {
-        return notificationUseCase.markAsRead(id)
+    public Mono<ResponseEntity<Void>> markAsRead(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "AGENCY") String context) {
+        return notificationUseCase.markAsRead(id, context)
                 .then(Mono.just(ResponseEntity.ok().build()));
     }
 }

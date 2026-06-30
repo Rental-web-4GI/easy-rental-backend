@@ -5,6 +5,7 @@ import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
 import com.yowyob.easyrental.modules.driver.dto.DriverDetailResponseDTO;
+import com.yowyob.easyrental.modules.driver.dto.DriverStatusUpdateDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @RestController
@@ -40,7 +42,7 @@ public class DriverController {
 
     @Operation(summary = "Créer un conducteur avec fichiers (Profil, CNI, Permis)")
     @PostMapping(value = "/org/{orgId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('ORGANIZATION')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<DriverResponseDTO>> create(
             @PathVariable UUID orgId,
             @Parameter(description = "ID de l'agence d'affectation", required = true)
@@ -60,17 +62,49 @@ public class DriverController {
             @RequestPart("cni") FilePart cniFile,
 
             @Parameter(description = "Scan du permis de conduire", required = true)
-            @RequestPart("license") FilePart licenseFile
+            @RequestPart("license") FilePart licenseFile,
+
+            @Parameter(description = "Numéro CNI")
+            @RequestPart(value = "cniNumber", required = false) String cniNumber,
+            @Parameter(description = "Numéro permis")
+            @RequestPart(value = "licenseNumber", required = false) String licenseNumber,
+            @Parameter(description = "Expiration permis (YYYY-MM-DD)")
+            @RequestPart(value = "licenseExpiry", required = false) String licenseExpiryStr,
+            @Parameter(description = "Années d'expérience")
+            @RequestPart(value = "yearsExperience", required = false) String yearsExperienceStr,
+
+            @Parameter(description = "Prix horaire (XAF)")
+            @RequestPart(value = "pricePerHour", required = false) String pricePerHourStr,
+            @Parameter(description = "Prix journalier (XAF)")
+            @RequestPart(value = "pricePerDay", required = false) String pricePerDayStr,
+            @Parameter(description = "Prix mensuel (XAF)")
+            @RequestPart(value = "pricePerMonth", required = false) String pricePerMonthStr
     ) {
         // Conversion des types
         UUID agencyId = UUID.fromString(agencyIdStr);
         Integer age = Integer.parseInt(ageStr);
         Integer gender = Integer.parseInt(genderStr);
+        java.time.LocalDate licenseExpiry = (licenseExpiryStr != null && !licenseExpiryStr.isBlank())
+            ? java.time.LocalDate.parse(licenseExpiryStr) : null;
+        Integer yearsExperience = (yearsExperienceStr != null && !yearsExperienceStr.isBlank())
+            ? Integer.parseInt(yearsExperienceStr) : null;
+        BigDecimal pricePerHour = parseOptionalPrice(pricePerHourStr);
+        BigDecimal pricePerDay = parseOptionalPrice(pricePerDayStr);
+        BigDecimal pricePerMonth = parseOptionalPrice(pricePerMonthStr);
 
         return driverUseCase.createDriver(
                 orgId, agencyId, firstname, lastname, tel, age, gender,
-                profilFile, cniFile, licenseFile
+                cniNumber, licenseNumber, licenseExpiry, yearsExperience,
+                profilFile, cniFile, licenseFile,
+                pricePerHour, pricePerDay, pricePerMonth
         ).map(ResponseEntity::ok);
+    }
+
+    private static BigDecimal parseOptionalPrice(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return new BigDecimal(value);
     }
 
     @Operation(summary = "Lister les conducteurs d'une organisation")
@@ -99,7 +133,7 @@ public class DriverController {
 
     @Operation(summary = "Mettre à jour le prix du chauffeur")
     @PutMapping("/{id}/pricing")
-    @PreAuthorize("hasRole('ORGANIZATION')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<DriverDetailResponseDTO>> updatePricing(
             @PathVariable UUID id,
             @RequestBody PricingUpdateDTO request) {
@@ -113,6 +147,15 @@ public class DriverController {
             @PathVariable UUID id,
             @RequestBody ScheduleUpdateDTO request) {
         return driverUseCase.updateDriverSchedules(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Mettre à jour le statut du chauffeur (ACTIVE / INACTIVE)")
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<DriverResponseDTO>> updateStatus(
+            @PathVariable UUID id,
+            @RequestBody DriverStatusUpdateDTO request) {
+        return driverUseCase.updateDriverStatus(id, request.status()).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Changer l'agence d'un conducteur")

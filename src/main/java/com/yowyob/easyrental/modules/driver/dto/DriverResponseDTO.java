@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.driver.dto;
 
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -16,6 +17,11 @@ public record DriverResponseDTO(
     String profilUrl,
     String cniUrl,
     String drivingLicenseUrl,
+    String cniNumber,
+    String licenseNumber,
+    LocalDate licenseExpiry,
+    Integer yearsExperience,
+    Double rating,
     String status,
     LocalDateTime createdAt,
     LocalDateTime updatedAt,

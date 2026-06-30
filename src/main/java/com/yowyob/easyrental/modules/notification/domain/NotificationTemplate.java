@@ -12,7 +12,7 @@ public enum NotificationTemplate {
     RESERVATION_INIT_AGENCY("Nouvelle demande de réservation reçue (Client App)."),
 
     RESERVATION_CONFIRMED_CLIENT("Réservation confirmée ! Code: %s. Le véhicule est réservé."),
-    RESERVATION_CONFIRMED_AGENCY("Réservation confirmée (Code: %s) pour le client %s."),
+    RESERVATION_CONFIRMED_AGENCY("Réservation confirmée (Code: %s) pour %s."),
     RESERVATION_CONFIRMED_DRIVER("Nouvelle course confirmée du %s au %s."),
 
     // --- PAIEMENT ---

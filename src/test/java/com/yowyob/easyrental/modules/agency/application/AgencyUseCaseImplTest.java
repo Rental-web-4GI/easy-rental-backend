@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.agency.application;
 
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import com.yowyob.easyrental.modules.agency.dto.AgencyRequestDTO;
@@ -22,6 +23,7 @@ import reactor.test.StepVerifier;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,9 +40,16 @@ class AgencyUseCaseImplTest {
     private AgencyMapper agencyMapper;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private KernelClientProperties kernelProperties;
 
     @InjectMocks
     private AgencyUseCaseImpl agencyUseCase;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+    }
 
     @Test
     void shouldReturnErrorWhenAgencyNotFound() {
@@ -69,7 +78,9 @@ class AgencyUseCaseImplTest {
     @Test
     void shouldListAgenciesByOrg() {
         UUID orgId = UUID.randomUUID();
+        OrganizationEntity org = OrganizationEntity.builder().id(orgId).build();
         AgencyEntity entity = AgencyEntity.builder().id(UUID.randomUUID()).organizationId(orgId).name("A1").build();
+        when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
         when(agencyRepository.findAllByOrganizationId(orgId)).thenReturn(Flux.just(entity));
         when(agencyMapper.toDto(entity)).thenReturn(mock(AgencyResponseDTO.class));
 
@@ -122,7 +133,14 @@ class AgencyUseCaseImplTest {
     @Test
     void shouldDeleteAgency() {
         UUID id = UUID.randomUUID();
+        UUID orgId = UUID.randomUUID();
+        AgencyEntity agency = AgencyEntity.builder().id(id).organizationId(orgId).build();
+        OrganizationEntity org = OrganizationEntity.builder().id(orgId).currentAgencies(2).build();
+        when(agencyRepository.findById(id)).thenReturn(Mono.just(agency));
         when(agencyRepository.deleteById(id)).thenReturn(Mono.empty());
+        when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
+        when(agencyRepository.countByOrganizationId(orgId)).thenReturn(Mono.just(1L));
+        when(organizationRepository.save(any())).thenReturn(Mono.just(org));
 
         StepVerifier.create(agencyUseCase.deleteAgency(id))
                 .verifyComplete();

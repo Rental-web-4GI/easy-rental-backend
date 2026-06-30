@@ -1,6 +1,12 @@
 package com.yowyob.easyrental.modules.vehicle.application;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
+import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelResourceAdapter;
+import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import io.r2dbc.postgresql.codec.Json;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
@@ -32,6 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
@@ -53,69 +62,170 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
     private final PricingUseCase pricingService;
     private final ReviewUseCase reviewService;
     private final ObjectMapper objectMapper;
+    private final KernelClientProperties kernelProperties;
+    private final KernelResourceAdapter kernelResourceAdapter;
+
+    private static final Duration KERNEL_VEHICLE_TIMEOUT = Duration.ofSeconds(12);
 
     @Transactional
     public Mono<VehicleResponseDTO> createVehicle(UUID orgId, VehicleRequestDTO request) {
         return organizationRepository.findById(Objects.requireNonNull(orgId))
                 .switchIfEmpty(Mono.<OrganizationEntity>error(new RuntimeException("Organisation non trouvée")))
-                .flatMap(org -> planRepository.findById(Objects.requireNonNull(org.getSubscriptionPlanId()))
-                        .flatMap(plan -> {
-                            if (org.getCurrentVehicles() >= plan.getMaxVehicles()) {
-                                return Mono.<VehicleEntity>error(new RuntimeException(
-                                        "Quota de véhicules atteint pour votre plan (" + plan.getName() + ")"));
-                            }
-                            try {
-                                Json functionalitiesJson = Json.of(objectMapper.writeValueAsString(request
-                                        .functionalities()));
-                                Json engineJson = Json.of(objectMapper.writeValueAsString(request.engineDetails()));
-                                Json fuelEfficiencyJson = Json.of(objectMapper.writeValueAsString(request
-                                        .fuelEfficiency()));
-                                Json insuranceJson = Json.of(objectMapper.writeValueAsString(request
-                                        .insuranceDetails()));
-                                Json descJson = Json.of(objectMapper.writeValueAsString(request.description()));
-                                Json imgsJson = Json.of(objectMapper.writeValueAsString(request.images()));
-
-                                VehicleEntity vehicle = VehicleEntity.builder()
-                                        .id(UUID.randomUUID())
-                                        .organizationId(orgId)
-                                        .agencyId(request.agencyId())
-                                        .categoryId(request.categoryId())
-                                        .licencePlate(request.licencePlate())
-                                        .vinNumber(request.vinNumber())
-                                        .brand(request.brand())
-                                        .model(request.model())
-                                        .yearProduction(request.yearProduction())
-                                        .places(request.places())
-                                        .kilometrage(request.kilometrage())
-                                        .statut(request.statut())
-                                        .color(request.color())
-                                        .transmission(request.transmission())
-                                        .functionalities(functionalitiesJson)
-                                        .engineDetails(engineJson)
-                                        .fuelEfficiency(fuelEfficiencyJson)
-                                        .insuranceDetails(insuranceJson)
-                                        .descriptionList(descJson)
-                                        .imagesList(imgsJson)
-                                        .createdAt(LocalDateTime.now())
-                                        .statut("AVAILABLE")
-                                        .rating(0.0)
-                                        .isNewRecord(true)
-                                        .build();
-
-                                return vehicleRepository.save(Objects.requireNonNull(vehicle))
-                                        .flatMap(savedVehicle -> {
-                                            org.setCurrentVehicles(org.getCurrentVehicles() + 1);
-                                            return organizationRepository.save(org)
-                                                    .then(updateAgencyVehicleStats(request.agencyId(), 1))
-                                                    .thenReturn(savedVehicle);
-                                        });
-                            } catch (Exception e) {
-                                return Mono.error(new RuntimeException("Erreur de sérialisation des données véhicule"));
-                            }
-                        }))
+                .flatMap(org -> {
+                    if (kernelProperties.isIntegrationEnabled() && org.getKernelOrganizationId() != null) {
+                        return createVehicleViaKernel(org, orgId, request);
+                    }
+                    return createVehicleLocal(org, orgId, request);
+                })
                 .flatMap(this::enrichVehicle)
                 .doOnSuccess(v -> eventPublisher.publishEvent(
                         new AuditEvent("CREATE_VEHICLE", "VEHICLE", "Véhicule ajouté : " + v.licencePlate())));
+    }
+
+    private Mono<VehicleEntity> createVehicleViaKernel(
+            OrganizationEntity org, UUID orgId, VehicleRequestDTO request) {
+        return agencyRepository.findById(Objects.requireNonNull(request.agencyId()))
+                .switchIfEmpty(Mono.error(new RuntimeException("Agence non trouvée")))
+                .flatMap(agency -> {
+                    if (agency.getKernelAgencyId() == null) {
+                        return Mono.error(new RuntimeException("Agence non liée au kernel"));
+                    }
+                    return KernelContextHolder.current()
+                            .flatMap(ctx -> planRepository.findById(Objects.requireNonNull(org.getSubscriptionPlanId()))
+                                    .flatMap(plan -> {
+                                        if (org.getCurrentVehicles() >= plan.getMaxVehicles()) {
+                                            return Mono.<VehicleEntity>error(new RuntimeException(
+                                                    "Quota de véhicules atteint pour votre plan (" + plan.getName()
+                                                            + ")"));
+                                        }
+                                        Map<String, Object> payload = buildKernelResourcePayload(request);
+                                        return kernelResourceAdapter.createResource(
+                                                        org.getKernelOrganizationId(),
+                                                        agency.getKernelAgencyId(),
+                                                        payload,
+                                                        ctx)
+                                                .timeout(KERNEL_VEHICLE_TIMEOUT)
+                                                .flatMap(kernelNode -> persistLocalVehicle(
+                                                        org, orgId, request, agency, kernelNode))
+                                                .onErrorResume(ex -> shouldFallbackToLocalVehicle(ex)
+                                                        ? createVehicleLocal(org, orgId, request)
+                                                        : Mono.error(ex));
+                                    }));
+                });
+    }
+
+    private boolean shouldFallbackToLocalVehicle(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            String message = current.getMessage() != null ? current.getMessage() : "";
+            if (message.contains("ORGANIZATION_SERVICE_QUOTA_UNAVAILABLE")
+                    || message.contains("ORGANIZATION_SERVICE_NOT_SUBSCRIBED")
+                    || message.contains("ORGANIZATION_SERVICE_QUOTA_EXCEEDED")
+                    || message.contains("KERNEL_TIMEOUT")
+                    || message.contains("KERNEL_SESSION_EXPIRED")
+                    || message.contains("HTTP_401")
+                    || message.contains("Unauthorized")
+                    || message.contains("timed out")
+                    || message.contains("TimeoutException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private Map<String, Object> buildKernelResourcePayload(VehicleRequestDTO request) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("code", request.licencePlate());
+        payload.put("name", request.brand() + " " + request.model());
+        payload.put("resourceType", "VEHICLE");
+        payload.put("active", true);
+        return payload;
+    }
+
+    private Mono<VehicleEntity> persistLocalVehicle(
+            OrganizationEntity org,
+            UUID orgId,
+            VehicleRequestDTO request,
+            AgencyEntity agency,
+            JsonNode kernelNode) {
+        try {
+            String kernelResourceIdText = KernelResponseSupport.textOrNull(kernelNode, "id");
+            if (kernelResourceIdText == null) {
+                return Mono.error(new RuntimeException("Kernel resource creation did not return an id"));
+            }
+            UUID kernelResourceId = UUID.fromString(kernelResourceIdText);
+            VehicleEntity vehicle = buildVehicleEntity(orgId, request);
+            vehicle.setKernelResourceId(kernelResourceId);
+            return vehicleRepository.save(Objects.requireNonNull(vehicle))
+                    .flatMap(savedVehicle -> {
+                        org.setCurrentVehicles(org.getCurrentVehicles() + 1);
+                        return organizationRepository.save(org)
+                                .then(updateAgencyVehicleStats(agency.getId(), 1))
+                                .thenReturn(savedVehicle);
+                    });
+        } catch (Exception e) {
+            return Mono.error(new RuntimeException("Erreur de sérialisation des données véhicule"));
+        }
+    }
+
+    private Mono<VehicleEntity> createVehicleLocal(
+            OrganizationEntity org, UUID orgId, VehicleRequestDTO request) {
+        return planRepository.findById(Objects.requireNonNull(org.getSubscriptionPlanId()))
+                .flatMap(plan -> {
+                    if (org.getCurrentVehicles() >= plan.getMaxVehicles()) {
+                        return Mono.<VehicleEntity>error(new RuntimeException(
+                                "Quota de véhicules atteint pour votre plan (" + plan.getName() + ")"));
+                    }
+                    try {
+                        VehicleEntity vehicle = buildVehicleEntity(orgId, request);
+                        return vehicleRepository.save(Objects.requireNonNull(vehicle))
+                                .flatMap(savedVehicle -> {
+                                    org.setCurrentVehicles(org.getCurrentVehicles() + 1);
+                                    return organizationRepository.save(org)
+                                            .then(updateAgencyVehicleStats(request.agencyId(), 1))
+                                            .thenReturn(savedVehicle);
+                                });
+                    } catch (Exception e) {
+                        return Mono.error(new RuntimeException("Erreur de sérialisation des données véhicule"));
+                    }
+                });
+    }
+
+    private VehicleEntity buildVehicleEntity(UUID orgId, VehicleRequestDTO request) throws Exception {
+        Json functionalitiesJson = Json.of(objectMapper.writeValueAsString(request.functionalities()));
+        Json engineJson = Json.of(objectMapper.writeValueAsString(request.engineDetails()));
+        Json fuelEfficiencyJson = Json.of(objectMapper.writeValueAsString(request.fuelEfficiency()));
+        Json insuranceJson = Json.of(objectMapper.writeValueAsString(request.insuranceDetails()));
+        Json descJson = Json.of(objectMapper.writeValueAsString(request.description()));
+        Json imgsJson = Json.of(objectMapper.writeValueAsString(request.images()));
+
+        return VehicleEntity.builder()
+                .id(UUID.randomUUID())
+                .organizationId(orgId)
+                .agencyId(request.agencyId())
+                .categoryId(request.categoryId())
+                .licencePlate(request.licencePlate())
+                .vinNumber(request.vinNumber())
+                .brand(request.brand())
+                .model(request.model())
+                .yearProduction(request.yearProduction())
+                .places(request.places())
+                .kilometrage(request.kilometrage())
+                .statut(request.statut())
+                .color(request.color())
+                .transmission(request.transmission())
+                .functionalities(functionalitiesJson)
+                .engineDetails(engineJson)
+                .fuelEfficiency(fuelEfficiencyJson)
+                .insuranceDetails(insuranceJson)
+                .descriptionList(descJson)
+                .imagesList(imgsJson)
+                .createdAt(LocalDateTime.now())
+                .statut("AVAILABLE")
+                .rating(0.0)
+                .isNewRecord(true)
+                .build();
     }
 
     private Mono<Void> updateAgencyVehicleStats(UUID agencyId, int increment) {
@@ -153,7 +263,7 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
             .switchIfEmpty(Mono.error(new RuntimeException("Véhicule non trouvé")))
             .flatMap(vehicle -> pricingService.setPricing(
                     vehicle.getOrganizationId(), ResourceType.VEHICLE, vehicle.getId(),
-                    request.pricePerHour(), request.pricePerDay()
+                    request.pricePerHour(), request.pricePerDay(), request.pricePerMonth()
                 ).thenReturn(vehicle)
             )
             .flatMap(vehicle -> getVehicleDetails(vehicle.getId()));

@@ -8,5 +8,6 @@ public record PosteResponseDTO(
     UUID id,
     String name,
     String description,
+    UUID organizationId,
     List<PermissionEntity> permissions
 ) {}

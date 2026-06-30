@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.config;
 
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextWebFilter;
 import com.yowyob.easyrental.shared.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,7 +27,10 @@ import org.springframework.security.web.server.authentication.HttpStatusServerEn
 public class SecurityConfig {
 
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, JwtAuthenticationFilter jwtFilter) {
+    public SecurityWebFilterChain securityWebFilterChain(
+            ServerHttpSecurity http,
+            JwtAuthenticationFilter jwtFilter,
+            KernelContextWebFilter kernelContextWebFilter) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
@@ -57,6 +61,7 @@ public class SecurityConfig {
                 )
                 .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
+                .addFilterBefore(kernelContextWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .addFilterAt(jwtFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }

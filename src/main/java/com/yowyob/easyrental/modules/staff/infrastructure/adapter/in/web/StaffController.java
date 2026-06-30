@@ -1,13 +1,16 @@
 package com.yowyob.easyrental.modules.staff.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.staff.dto.StaffRequestDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffInviteRequestDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffInviteResponseDTO;
+import com.yowyob.easyrental.modules.staff.dto.KernelRoleResponseDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffResponseDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffUpdateDTO;
 import com.yowyob.easyrental.modules.staff.domain.port.in.StaffUseCase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -35,12 +38,25 @@ public class StaffController {
 
     @Operation(summary = "Ajouter un membre au staff d'une organisation")
     @PostMapping("/org/{orgId}")
-    @NotNull
     @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
-    // @PreAuthorize("@rbac.hasPermission(#orgId, 'staff:create')")
     public Mono<ResponseEntity<StaffResponseDTO>> create(@PathVariable UUID orgId,
             @RequestBody StaffRequestDTO request) {
         return staffUseCase.addStaffToOrganization(orgId, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Provisionner un agent (compte kernel + invitation + email)")
+    @PostMapping("/org/{orgId}/invite")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
+    public Mono<ResponseEntity<StaffInviteResponseDTO>> invite(@PathVariable UUID orgId,
+            @Valid @RequestBody StaffInviteRequestDTO request) {
+        return staffUseCase.provisionStaffToOrganization(orgId, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Lister les rôles kernel disponibles pour invitation staff")
+    @GetMapping("/org/{orgId}/kernel-roles")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
+    public Flux<KernelRoleResponseDTO> listKernelRoles(@PathVariable UUID orgId) {
+        return staffUseCase.listKernelRoles(orgId);
     }
 
     @Operation(summary = "Lister tout le staff d'une organisation")

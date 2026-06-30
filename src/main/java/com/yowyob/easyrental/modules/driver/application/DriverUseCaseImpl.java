@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
@@ -51,7 +52,9 @@ public class DriverUseCaseImpl implements DriverUseCase {
             UUID orgId,
             UUID agencyId,
             String firstname, String lastname, String tel, Integer age, Integer gender,
-            FilePart profilFile, FilePart cniFile, FilePart licenseFile) {
+            String cniNumber, String licenseNumber, java.time.LocalDate licenseExpiry, Integer yearsExperience,
+            FilePart profilFile, FilePart cniFile, FilePart licenseFile,
+            BigDecimal pricePerHour, BigDecimal pricePerDay, BigDecimal pricePerMonth) {
 
         return organizationService.validateQuota(orgId, "DRIVER")
             .flatMap(hasQuota -> {
@@ -77,6 +80,10 @@ public class DriverUseCaseImpl implements DriverUseCase {
                                 .profilUrl(tuple.getT1())
                                 .cniUrl(tuple.getT2())
                                 .drivingLicenseUrl(tuple.getT3())
+                                .cniNumber(cniNumber)
+                                .licenseNumber(licenseNumber)
+                                .licenseExpiry(licenseExpiry)
+                                .yearsExperience(yearsExperience)
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
                                 .rating(0.0)
@@ -84,19 +91,19 @@ public class DriverUseCaseImpl implements DriverUseCase {
                                 .build();
 
                         return driverRepository.save(driver).flatMap(saved -> {
-                            if (saved != null) {
-                                return organizationService.updateDriverCounter(orgId, 1)
-                                        .then(updateAgencyDriverStats(agencyId, 1))
-                                        .thenReturn(saved);
-                            } else {
+                            if (saved == null) {
                                 return Mono.error(new RuntimeException("Failed to save driver"));
                             }
+                            return organizationService.updateDriverCounter(orgId, 1)
+                                    .then(updateAgencyDriverStats(agencyId, 1))
+                                    .thenReturn(saved);
                         });
                     });
             })
+            .flatMap(saved -> applyInitialPricing(orgId, saved, pricePerHour, pricePerDay, pricePerMonth))
             .doOnSuccess(d -> eventPublisher.publishEvent(new AuditEvent("CREATE_DRIVER", "DRIVER",
                     "Conducteur créé : " + d.getFirstname() + " " + d.getLastname())))
-            .flatMap(this::enrichDriver); // Enrichissement après création (prix null au début)
+            .flatMap(this::enrichDriver);
     }
 
     public Flux<DriverResponseDTO> getDriversByOrg(UUID orgId) {
@@ -121,15 +128,21 @@ public class DriverUseCaseImpl implements DriverUseCase {
 
                 return Mono.zip(dtoMono, pricingMono.defaultIfEmpty(new PricingEntity()), scheduleFlux,
                         reviewsFlux, orgRequirementMono)
-                    .map(tuple -> new DriverDetailResponseDTO(
-                        tuple.getT1(), // DTO
-                        tuple.getT2().getId() == null ? null : tuple.getT2(),
-                                // Pricing Entity (redondant mais gardé pour structure detail)
-                        tuple.getT3(), // Schedule
+                    .map(tuple -> {
+                        PricingEntity pricingEntity = tuple.getT2();
+                        if (pricingEntity.getId() == null && tuple.getT1().pricing() != null
+                                && tuple.getT1().pricing().getId() != null) {
+                            pricingEntity = tuple.getT1().pricing();
+                        }
+                        return new DriverDetailResponseDTO(
+                        tuple.getT1(),
+                        pricingEntity.getId() == null ? null : pricingEntity,
+                        tuple.getT3(),
                         driver.getRating(),
-                        tuple.getT4(), // Reviews
-                        tuple.getT5()  // isDriverBookingRequired
-                    ));
+                        tuple.getT4(),
+                        tuple.getT5()
+                    );
+                    });
             });
     }
 
@@ -181,7 +194,7 @@ public class DriverUseCaseImpl implements DriverUseCase {
             .switchIfEmpty(Mono.error(new RuntimeException("Chauffeur non trouvé")))
             .flatMap(driver -> pricingService.setPricing(
                     driver.getOrganizationId(), ResourceType.DRIVER, driver.getId(),
-                    request.pricePerHour(), request.pricePerDay()
+                    request.pricePerHour(), request.pricePerDay(), request.pricePerMonth()
                 ).thenReturn(driver)
             )
             .flatMap(driver -> getDriverDetails(driver.getId()));
@@ -202,6 +215,18 @@ public class DriverUseCaseImpl implements DriverUseCase {
     }
 
     @Transactional
+    public Mono<DriverResponseDTO> updateDriverStatus(UUID id, String status) {
+        return driverRepository.findById(Objects.requireNonNull(id))
+                .switchIfEmpty(Mono.error(new RuntimeException("Chauffeur non trouvé")))
+                .flatMap(driver -> {
+                    driver.setStatus(status);
+                    driver.setUpdatedAt(LocalDateTime.now());
+                    return driverRepository.save(driver);
+                })
+                .flatMap(this::enrichDriver);
+    }
+
+    @Transactional
     public Mono<Void> deleteDriver(UUID id) {
         return driverRepository.findById(Objects.requireNonNull(id))
                 .flatMap(driver -> driverRepository.delete(Objects.requireNonNull(driver))
@@ -216,6 +241,33 @@ public class DriverUseCaseImpl implements DriverUseCase {
                     agency.setActiveDrivers(agency.getActiveDrivers() + increment);
                     return agencyRepository.save(agency);
                 }).then();
+    }
+
+    private Mono<DriverEntity> applyInitialPricing(
+            UUID orgId,
+            DriverEntity driver,
+            BigDecimal pricePerHour,
+            BigDecimal pricePerDay,
+            BigDecimal pricePerMonth) {
+        if (!hasAnyPrice(pricePerHour, pricePerDay, pricePerMonth)) {
+            return Mono.just(driver);
+        }
+        return pricingService.setPricing(
+                orgId,
+                ResourceType.DRIVER,
+                driver.getId(),
+                pricePerHour,
+                pricePerDay,
+                pricePerMonth
+        ).thenReturn(driver);
+    }
+
+    private boolean hasAnyPrice(BigDecimal pricePerHour, BigDecimal pricePerDay, BigDecimal pricePerMonth) {
+        return isPositive(pricePerHour) || isPositive(pricePerDay) || isPositive(pricePerMonth);
+    }
+
+    private boolean isPositive(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
 
     // --- METHODE PRIVEE POUR ENRICHIR LE DTO AVEC LE PRIX ---

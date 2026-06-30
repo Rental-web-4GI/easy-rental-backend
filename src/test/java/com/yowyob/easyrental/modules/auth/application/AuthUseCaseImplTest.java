@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.auth.application;
 
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
@@ -46,9 +47,41 @@ class AuthUseCaseImplTest {
     private JwtUtil jwtUtil;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private KernelClientProperties kernelProperties;
+    @Mock
+    private com.yowyob.easyrental.kernel.infrastructure.adapter.KernelAuthAdapter kernelAuthAdapter;
+    @Mock
+    private com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter kernelOrganizationAdapter;
+    @Mock
+    private com.yowyob.easyrental.kernel.application.KernelUserMappingService kernelUserMappingService;
+    @Mock
+    private com.yowyob.easyrental.kernel.application.KernelSessionStore kernelSessionStore;
+    @Mock
+    private com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
 
     @InjectMocks
     private AuthUseCaseImpl authUseCase;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        org.mockito.Mockito.lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+    }
+
+    @Test
+    void shouldReturnMfaRequiredWhenKernelLoginRequiresMfa() {
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        LoginRequest request = new LoginRequest("admin@test.com", "password");
+        when(userRepository.findByEmail("admin@test.com")).thenReturn(Mono.empty());
+        when(kernelAuthAdapter.login("admin@test.com", "password"))
+                .thenReturn(Mono.just(com.yowyob.easyrental.kernel.infrastructure.dto.KernelLoginResult
+                        .mfaRequired("mfa-token", "EMAIL")));
+
+        StepVerifier.create(authUseCase.login(request))
+                .expectNextMatches(r -> Boolean.TRUE.equals(r.mfaRequired())
+                        && "mfa-token".equals(r.mfaToken()))
+                .verifyComplete();
+    }
 
     @Test
     void shouldLoginWhenCredentialsAreValid() {

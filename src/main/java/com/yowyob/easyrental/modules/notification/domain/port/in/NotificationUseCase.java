@@ -36,6 +36,10 @@ public interface NotificationUseCase {
     Mono<Long> countUnreadAgency(UUID agencyId);
     Flux<NotificationResponseDTO> getOrganizationNotifications(UUID orgId);
     Mono<Long> countUnreadOrganization(UUID orgId);
-    Mono<Void> markAsRead(UUID notificationId);
+    Mono<Void> markAsReadAgency(UUID notificationId);
+
+    Mono<Void> markAsReadOrganization(UUID notificationId);
+
+    Mono<Void> markAsRead(UUID notificationId, String context);
     Mono<Void> deleteNotification(UUID notificationId);
 }

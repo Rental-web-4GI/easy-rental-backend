@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.shared.security;
 
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.modules.agency.infrastructure.adapter.out.persistence.AgencyRepository;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.infrastructure.adapter.out.persistence.UserRepository;
@@ -22,6 +23,7 @@ import reactor.test.StepVerifier;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,7 +35,13 @@ class AccessControlServiceTest {
     @Mock private AgencyRepository agencyRepository;
     @Mock private OrganizationRepository organizationRepository;
     @Mock private CategoryRepository categoryRepository;
+    @Mock private KernelClientProperties kernelProperties;
     @InjectMocks private AccessControlService accessControlService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+    }
 
     private UsernamePasswordAuthenticationToken auth(String email, String... roles) {
         List<SimpleGrantedAuthority> authorities = java.util.Arrays.stream(roles)

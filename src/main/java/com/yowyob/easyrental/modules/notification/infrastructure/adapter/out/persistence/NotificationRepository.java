@@ -38,7 +38,7 @@ public interface NotificationRepository extends R2dbcRepository<NotificationEnti
     Flux<NotificationEntity> findNotificationsByAgencyIds(List<UUID> agencyIds);
 
     @Query("SELECT COUNT(*) FROM notifications WHERE resource_type = 'AGENCY' AND resource_id IN (:agencyIds) AND"
-            + " is_read = false")
+            + " is_read_org = false")
     Mono<Long> countUnreadByAgencyIds(List<UUID> agencyIds);
 
     // --- DRIVER ---

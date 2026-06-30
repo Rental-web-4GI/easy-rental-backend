@@ -39,4 +39,9 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
     public Mono<OrganizationEntity> findByOwnerId(UUID ownerId) {
         return organizationRepository.findByOwnerId(ownerId);
     }
+
+    @Override
+    public Mono<OrganizationEntity> findByKernelOrganizationId(UUID kernelOrganizationId) {
+        return organizationRepository.findByKernelOrganizationId(kernelOrganizationId);
+    }
 }

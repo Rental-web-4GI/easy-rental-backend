@@ -168,7 +168,8 @@ class DriverUseCaseImplTest {
         stubEnrichDriver();
 
         StepVerifier.create(driverUseCase.createDriver(orgId, agencyId, "John", "Doe", "690000000", 30, 1,
-                        profil, cni, license))
+                        "AA123456", "DL987654", null, 5,
+                        profil, cni, license, null, null, null))
                 .expectNextCount(1)
                 .verifyComplete();
     }
@@ -196,7 +197,7 @@ class DriverUseCaseImplTest {
     void shouldUpdateDriverPricing() {
         UUID id = sampleDriver.getId();
         when(driverRepository.findById(id)).thenReturn(Mono.just(sampleDriver));
-        when(pricingService.setPricing(any(), eq(ResourceType.DRIVER), eq(id), any(), any()))
+        when(pricingService.setPricing(any(), eq(ResourceType.DRIVER), eq(id), any(), any(), any()))
                 .thenReturn(Mono.just(new PricingEntity()));
         when(scheduleService.getResourceSchedule(ResourceType.DRIVER, id)).thenReturn(Flux.empty());
         when(reviewService.getReviews(ResourceType.DRIVER, id)).thenReturn(Flux.empty());
@@ -205,7 +206,7 @@ class DriverUseCaseImplTest {
         stubEnrichDriver();
 
         StepVerifier.create(driverUseCase.updateDriverPricing(id,
-                        new PricingUpdateDTO(BigDecimal.TEN, BigDecimal.valueOf(100))))
+                        new PricingUpdateDTO(BigDecimal.TEN, BigDecimal.valueOf(100), null)))
                 .expectNextMatches(DriverDetailResponseDTO.class::isInstance)
                 .verifyComplete();
     }
@@ -226,6 +227,18 @@ class DriverUseCaseImplTest {
 
         StepVerifier.create(driverUseCase.updateDriverSchedules(id, new ScheduleUpdateDTO(List.of(schedule))))
                 .expectNextMatches(DriverDetailResponseDTO.class::isInstance)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldUpdateDriverStatus() {
+        UUID id = sampleDriver.getId();
+        when(driverRepository.findById(id)).thenReturn(Mono.just(sampleDriver));
+        when(driverRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        stubEnrichDriver();
+
+        StepVerifier.create(driverUseCase.updateDriverStatus(id, "INACTIVE"))
+                .expectNextCount(1)
                 .verifyComplete();
     }
 

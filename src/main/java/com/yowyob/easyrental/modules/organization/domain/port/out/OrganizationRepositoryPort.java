@@ -19,4 +19,6 @@ public interface OrganizationRepositoryPort {
     Flux<OrganizationEntity> findAllBySubscriptionPlanId(UUID subscriptionPlanId);
 
     Mono<OrganizationEntity> findByOwnerId(UUID ownerId);
+
+    Mono<OrganizationEntity> findByKernelOrganizationId(UUID kernelOrganizationId);
 }

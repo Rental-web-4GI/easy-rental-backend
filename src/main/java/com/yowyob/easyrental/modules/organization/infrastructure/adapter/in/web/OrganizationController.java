@@ -19,6 +19,7 @@ import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -56,6 +57,13 @@ public class OrganizationController {
     @PreAuthorize("hasRole('ORGANIZATION')")
     public Mono<ResponseEntity<OrgUserResponseDTO>> getMyOrgAndUser() {
         return organizationUseCase.getCurrentOrgAndUser().map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Finaliser l'onboarding et créer l'organisation")
+    @PostMapping("/onboarding")
+    @PreAuthorize("hasRole('ORGANIZATION')")
+    public Mono<ResponseEntity<OrgResponseDTO>> completeOnboarding(@RequestBody OrgUpdateDTO request) {
+        return organizationUseCase.completeOnboarding(request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Mettre à jour une organisation (JSON)")

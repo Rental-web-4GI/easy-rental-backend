@@ -28,6 +28,7 @@ public class PricingEntity implements Persistable<UUID> {
 
     private BigDecimal pricePerHour;
     private BigDecimal pricePerDay;
+    private BigDecimal pricePerMonth;
     @Builder.Default
     private String currency = "XAF";
 

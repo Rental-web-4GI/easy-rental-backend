@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.vehicle.application;
 
 import com.yowyob.easyrental.modules.vehicle.domain.port.out.CategoryRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import com.yowyob.easyrental.modules.vehicle.domain.VehicleCategoryEntity;
 import com.yowyob.easyrental.modules.vehicle.dto.CategoryRequestDTO;
 import com.yowyob.easyrental.shared.exception.ResourceNotFoundException;
@@ -24,6 +25,9 @@ class CategoryUseCaseImplTest {
 
     @Mock
     private CategoryRepositoryPort categoryRepository;
+
+    @Mock
+    private VehicleRepositoryPort vehicleRepository;
 
     @InjectMocks
     private CategoryUseCaseImpl categoryUseCase;
@@ -112,9 +116,22 @@ class CategoryUseCaseImplTest {
         UUID id = UUID.randomUUID();
         when(categoryRepository.findById(id)).thenReturn(Mono.just(
                 VehicleCategoryEntity.builder().id(id).organizationId(UUID.randomUUID()).name("Custom").build()));
+        when(vehicleRepository.countByCategoryId(id)).thenReturn(Mono.just(0L));
         when(categoryRepository.deleteById(id)).thenReturn(Mono.empty());
 
         StepVerifier.create(categoryUseCase.delete(id))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectDeleteWhenCategoryInUse() {
+        UUID id = UUID.randomUUID();
+        when(categoryRepository.findById(id)).thenReturn(Mono.just(
+                VehicleCategoryEntity.builder().id(id).organizationId(UUID.randomUUID()).name("Custom").build()));
+        when(vehicleRepository.countByCategoryId(id)).thenReturn(Mono.just(2L));
+
+        StepVerifier.create(categoryUseCase.delete(id))
+                .expectError(ValidationException.class)
+                .verify();
     }
 }

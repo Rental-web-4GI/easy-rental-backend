@@ -81,17 +81,20 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
 
                     // 5. Blocage Planning (Si passage à RESERVED ou PAID pour la première fois)
                     Mono<Void> blockSchedule = Mono.empty();
-                    if (oldStatus == RentalStatus.PENDING && 
-                            (newStatus == RentalStatus.RESERVED || newStatus == RentalStatus.PAID)) {
+                    if (oldStatus == RentalStatus.PENDING
+                            && (newStatus == RentalStatus.RESERVED || newStatus == RentalStatus.PAID)) {
                         ScheduleRequestDTO schedule = new ScheduleRequestDTO(
                             rental.getStartDate(), rental.getEndDate(), "RENTED", "Location #" + rental.getId()
                         );
-                        blockSchedule = Mono.when(
-                            scheduleService.addUnavailability(rental.getAgencyId(), ResourceType.VEHICLE,
-                                    rental.getVehicleId(), schedule),
-                            scheduleService.addUnavailability(rental.getAgencyId(), ResourceType.DRIVER,
-                                    rental.getDriverId(), schedule)
-                        );
+                        Mono<Void> blockVehicle = scheduleService.addUnavailability(
+                            rental.getAgencyId(), ResourceType.VEHICLE, rental.getVehicleId(), schedule)
+                            .then();
+                        Mono<Void> blockDriver = rental.getDriverId() != null
+                            ? scheduleService.addUnavailability(
+                                rental.getAgencyId(), ResourceType.DRIVER, rental.getDriverId(), schedule)
+                                .then()
+                            : Mono.empty();
+                        blockSchedule = Mono.when(blockVehicle, blockDriver);
                     }
 
                     // 6. Notifications (Utilisation des Templates)
@@ -112,28 +115,32 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
                     // Notification spécifique "Réservation Réussie" (Passage à RESERVED)
                     Mono<Void> notifyReservationSuccess = Mono.empty();
                     if (oldStatus == RentalStatus.PENDING && newStatus == RentalStatus.RESERVED) {
-                        notifyReservationSuccess = Mono.when(
-                            notificationService.createNotification(
+                        Mono<Void> notifyClientReserved = rental.getClientId() != null
+                            ? notificationService.createNotification(
                                 rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
-                                        NotificationReason.RESERVATION_CREATED,
+                                NotificationReason.RESERVATION_CREATED,
                                 rental.getVehicleId(), rental.getDriverId(),
                                 NotificationTemplate.RESERVATION_CONFIRMED_CLIENT, rental.getId()
-                            ),
-                            notificationService.createNotification(
-                                rental.getId(), rental.getAgencyId(), NotificationResourceType.AGENCY,
-                                        NotificationReason.RESERVATION_CREATED,
-                                rental.getVehicleId(), rental.getDriverId(),
-                                NotificationTemplate.RESERVATION_CONFIRMED_AGENCY, rental.getId(), rental.getClientId()
-                            ),
-                            // Notif Chauffeur
-                            notificationService.createNotification(
+                            ).then()
+                            : Mono.empty();
+                        Mono<Void> notifyAgencyReserved = notificationService.createNotification(
+                            rental.getId(), rental.getAgencyId(), NotificationResourceType.AGENCY,
+                            NotificationReason.RESERVATION_CREATED,
+                            rental.getVehicleId(), rental.getDriverId(),
+                            NotificationTemplate.RESERVATION_CONFIRMED_AGENCY, rental.getId(),
+                            RentalClientLabelResolver.resolve(rental)
+                        ).then();
+                        Mono<Void> notifyDriverReserved = rental.getDriverId() != null
+                            ? notificationService.createNotification(
                                 rental.getId(), rental.getDriverId(), NotificationResourceType.DRIVER,
-                                        NotificationReason.RESERVATION_CREATED,
+                                NotificationReason.RESERVATION_CREATED,
                                 rental.getVehicleId(), rental.getDriverId(),
                                 NotificationTemplate.RESERVATION_CONFIRMED_DRIVER, rental.getStartDate(),
-                                        rental.getEndDate()
-                            )
-                        );
+                                rental.getEndDate()
+                            ).then()
+                            : Mono.empty();
+                        notifyReservationSuccess = Mono.when(
+                            notifyClientReserved, notifyAgencyReserved, notifyDriverReserved);
                     }
 
                     return updateRevenue

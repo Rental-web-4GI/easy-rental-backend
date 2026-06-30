@@ -5,6 +5,7 @@ import com.yowyob.easyrental.shared.enums.RentalStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,4 +28,6 @@ public interface RentalRepositoryPort {
     Flux<RentalEntity> findAllByAgencyIdAndStatusIn(UUID agencyId, List<RentalStatus> statuses);
 
     Flux<RentalEntity> findAllByOrganizationIdAndStatusIn(UUID orgId, List<RentalStatus> statuses);
+
+    Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end);
 }

@@ -34,7 +34,10 @@ public class AgencyMapper {
             entity.getDepositPercentage(),
             entity.getLogoUrl(),
             entity.getPrimaryColor(),
-            entity.getSecondaryColor()
+            entity.getSecondaryColor(),
+            entity.getTotalVehicles(),
+            entity.getTotalRentals(),
+            entity.getMonthlyRevenue()
         );
     }
 }

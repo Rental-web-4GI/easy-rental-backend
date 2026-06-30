@@ -3,12 +3,14 @@ package com.yowyob.easyrental.modules.auth.infrastructure.adapter.in.web;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
+import com.yowyob.easyrental.modules.auth.dto.MfaConfirmRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.dto.OrgRegisterRequest;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,17 +30,27 @@ public class AuthController {
 
     @PostMapping("/login")
     public Mono<ResponseEntity<AuthResponse>> login(@RequestBody LoginRequest request) {
-        return authUseCase.login(request).map(ResponseEntity::ok);
+        return authUseCase.login(request)
+                .map(response -> {
+                    if (Boolean.TRUE.equals(response.mfaRequired())) {
+                        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+                    }
+                    return ResponseEntity.ok(response);
+                });
     }
 
-    // Récupérer l'utilisateur connecté
+    @PostMapping("/login/mfa/confirm")
+    public Mono<ResponseEntity<AuthResponse>> confirmMfa(@RequestBody MfaConfirmRequest request) {
+        return authUseCase.confirmMfa(request.mfaToken(), request.code())
+                .map(ResponseEntity::ok);
+    }
+
     @GetMapping("/me")
     public Mono<ResponseEntity<UserEntity>> me() {
         return authUseCase.getCurrentUser()
                 .map(ResponseEntity::ok);
     }
 
-    // Rafraîchir le token
     @PostMapping("/refresh")
     public Mono<ResponseEntity<AuthResponse>> refresh(ServerWebExchange exchange) {
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);

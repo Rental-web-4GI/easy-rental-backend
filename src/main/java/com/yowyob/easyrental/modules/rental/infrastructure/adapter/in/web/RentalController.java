@@ -64,7 +64,7 @@ public class RentalController {
 
     @Operation(summary = "Create agency walk-in rental")
     @PostMapping("/agency/{agencyId}/create")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessAgency(#agencyId, 'rental:create')")
     public Mono<ResponseEntity<RentalInitResponse>> createAgencyRental(
             @PathVariable UUID agencyId,
             @RequestBody @Valid AgencyRentalRequest request) {

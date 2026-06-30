@@ -11,6 +11,8 @@ import reactor.core.publisher.Mono;
 public interface UserRepository extends R2dbcRepository<UserEntity, UUID> {
     Mono<UserEntity> findByEmail(String email);
 
+    Mono<UserEntity> findByKernelUserId(UUID kernelUserId);
+
     @Modifying
     @Query("UPDATE users SET organization_id = null, agency_id = null, poste_id = null")
     Mono<Void> clearUserReferences();

@@ -1,5 +1,8 @@
 package com.yowyob.easyrental.modules.staff.domain.port.in;
 
+import com.yowyob.easyrental.modules.staff.dto.KernelRoleResponseDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffInviteRequestDTO;
+import com.yowyob.easyrental.modules.staff.dto.StaffInviteResponseDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffRequestDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffResponseDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffUpdateDTO;
@@ -15,6 +18,8 @@ import reactor.core.publisher.Mono;
  */
 public interface StaffUseCase {
     Mono<StaffResponseDTO> addStaffToOrganization(UUID orgId, StaffRequestDTO request);
+    Mono<StaffInviteResponseDTO> provisionStaffToOrganization(UUID orgId, StaffInviteRequestDTO request);
+    Flux<KernelRoleResponseDTO> listKernelRoles(UUID orgId);
     Flux<StaffResponseDTO> getStaffByOrganization(UUID orgId);
     Flux<StaffResponseDTO> getStaffByAgency(UUID agencyId);
     Mono<StaffResponseDTO> getStaffById(UUID id);

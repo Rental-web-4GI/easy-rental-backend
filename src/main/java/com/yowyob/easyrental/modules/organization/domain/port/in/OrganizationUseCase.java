@@ -19,6 +19,7 @@ public interface OrganizationUseCase {
     Mono<OrgResponseDTO> getOrganization(UUID id);
     Flux<OrgResponseDTO> getAllOrganizations();
     Mono<OrgResponseDTO> updateOrganization(UUID id, OrgUpdateDTO request);
+    Mono<OrgResponseDTO> completeOnboarding(OrgUpdateDTO request);
     Mono<OrgResponseDTO> updateOrganizationWithMedia(
             UUID id,
             OrgUpdateDTO request,

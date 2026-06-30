@@ -29,5 +29,7 @@ public record OrgResponseDTO(
     Integer totalRentals,
     Double monthlyRevenue,
     Double yearlyRevenue,
-    Boolean isDriverBookingRequired
+    Boolean isDriverBookingRequired,
+    String governanceStatus,
+    UUID kernelOrganizationId
 ) {}

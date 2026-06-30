@@ -26,5 +26,8 @@ public record AgencyResponseDTO(
     Double depositPercentage,
     String logoUrl,
     String primaryColor,
-    String secondaryColor
+    String secondaryColor,
+    Integer totalVehicles,
+    Integer totalRentals,
+    Double monthlyRevenue
 ) {}

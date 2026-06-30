@@ -5,6 +5,9 @@ import com.yowyob.easyrental.modules.auth.dto.PasswordUpdateDTO;
 import com.yowyob.easyrental.modules.auth.dto.UserProfileUpdateDTO;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.in.UserUseCase;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
+import com.yowyob.easyrental.kernel.security.KernelPermissionMapper;
 import com.yowyob.easyrental.modules.permission.domain.PermissionEntity;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +34,7 @@ public class UserController {
 
     private final UserUseCase userUseCase;
     private final AuthUseCase authUseCase;
+    private final KernelClientProperties kernelProperties;
 
     @Operation(summary = "Mettre à jour le profil de l'utilisateur connecté")
     @PutMapping("/profile")
@@ -50,6 +55,22 @@ public class UserController {
     @Operation(summary = "Lister les permissions de l'utilisateur connecté")
     @GetMapping("/me/permissions")
     public Flux<PermissionEntity> getMyPermissions() {
+        if (kernelProperties.isIntegrationEnabled()) {
+            return ReactiveSecurityContextHolder.getContext()
+                    .map(ctx -> ctx.getAuthentication())
+                    .flatMapMany(auth -> {
+                        if (auth instanceof KernelAuthenticationToken kernelAuth) {
+                            return Flux.fromIterable(KernelPermissionMapper.toFrontendTags(kernelAuth.getClaims()))
+                                    .map(tag -> PermissionEntity.builder()
+                                            .tag(tag)
+                                            .name(tag)
+                                            .module("rental")
+                                            .build());
+                        }
+                        return authUseCase.getCurrentUser()
+                                .flatMapMany(user -> userUseCase.getUserPermissions(user.getId()));
+                    });
+        }
         return authUseCase.getCurrentUser()
                 .flatMapMany(user -> userUseCase.getUserPermissions(user.getId()));
     }

@@ -39,7 +39,9 @@ public class OrgMapper {
             entity.getTotalRentals(),
             entity.getMonthlyRevenue(),
             entity.getYearlyRevenue(),
-            entity.getIsDriverBookingRequired()
+            entity.getIsDriverBookingRequired(),
+            entity.getGovernanceStatus(),
+            entity.getKernelOrganizationId()
         );
     }
 }

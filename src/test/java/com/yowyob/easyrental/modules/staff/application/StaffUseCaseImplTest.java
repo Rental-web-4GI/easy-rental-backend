@@ -1,5 +1,8 @@
 package com.yowyob.easyrental.modules.staff.application;
 
+import com.yowyob.easyrental.config.EasyRentalProperties;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelAdministrationAdapter;
 import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
@@ -14,6 +17,8 @@ import com.yowyob.easyrental.modules.staff.dto.StaffRequestDTO;
 import com.yowyob.easyrental.modules.staff.dto.StaffResponseDTO;
 import com.yowyob.easyrental.modules.staff.mapper.StaffMapper;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
+import com.yowyob.easyrental.modules.staff.dto.StaffInviteRequestDTO;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.modules.staff.dto.StaffUpdateDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,10 +49,47 @@ class StaffUseCaseImplTest {
     @Mock private StaffMapper staffMapper;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private KernelClientProperties kernelProperties;
+    @Mock private KernelAdministrationAdapter kernelAdministrationAdapter;
+    @Mock private KernelStaffProvisioningService kernelStaffProvisioningService;
+    @Mock private EasyRentalProperties easyRentalProperties;
     @InjectMocks private StaffUseCaseImpl staffUseCase;
 
     @Test
+    void shouldBlockStaffCreationWhenKernelIntegrationEnabled() {
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        UUID orgId = UUID.randomUUID();
+        StaffRequestDTO request = new StaffRequestDTO("John", "Doe", "new@test.com", UUID.randomUUID(), UUID.randomUUID());
+
+        StepVerifier.create(staffUseCase.addStaffToOrganization(orgId, request))
+                .expectErrorMatches(e -> e.getMessage().contains("invitation kernel"))
+                .verify();
+    }
+
+    @Test
+    void shouldRejectProvisionWhenOrgNotApproved() {
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        EasyRentalProperties.Staff staff = new EasyRentalProperties.Staff();
+        staff.setSkipKernelProvisioning(false);
+        when(easyRentalProperties.getStaff()).thenReturn(staff);
+        UUID orgId = UUID.randomUUID();
+        StaffInviteRequestDTO request = new StaffInviteRequestDTO(
+                "John", "Doe", "agent@test.com", UUID.randomUUID(), UUID.randomUUID());
+        when(organizationRepository.findById(orgId)).thenReturn(Mono.just(
+                OrganizationEntity.builder()
+                        .id(orgId)
+                        .kernelOrganizationId(UUID.randomUUID())
+                        .governanceStatus("PENDING_APPROVAL")
+                        .build()));
+
+        StepVerifier.create(staffUseCase.provisionStaffToOrganization(orgId, request))
+                .expectError(ValidationException.class)
+                .verify();
+    }
+
+    @Test
     void shouldAddStaffToOrganization() {
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
         UUID orgId = UUID.randomUUID();
         UUID agencyId = UUID.randomUUID();
         UUID posteId = UUID.randomUUID();

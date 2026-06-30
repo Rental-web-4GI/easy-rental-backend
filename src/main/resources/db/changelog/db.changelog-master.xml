@@ -418,4 +418,33 @@
         <sqlFile path="changes/09-postgis.sql" relativeToChangelogFile="true"/>
     </changeSet>
 
+    <!-- ================================================================================== -->
+    <!-- 10. KERNEL INTEGRATION — mapping IDs and governance                                  -->
+    <!-- ================================================================================== -->
+    <changeSet id="10-kernel-integration-mapping" author="easyrental">
+        <addColumn tableName="users">
+            <column name="kernel_user_id" type="UUID"/>
+            <column name="kernel_actor_id" type="UUID"/>
+        </addColumn>
+        <dropNotNullConstraint tableName="users" columnName="password" columnDataType="VARCHAR(255)"/>
+
+        <addColumn tableName="organizations">
+            <column name="kernel_organization_id" type="UUID"/>
+            <column name="governance_status" type="VARCHAR(32)" defaultValue="APPROVED"/>
+        </addColumn>
+        <addUniqueConstraint tableName="organizations" columnNames="kernel_organization_id"
+                             constraintName="uk_organizations_kernel_organization_id"/>
+
+        <addColumn tableName="agencies">
+            <column name="kernel_agency_id" type="UUID"/>
+        </addColumn>
+        <addUniqueConstraint tableName="agencies" columnNames="kernel_agency_id"
+                             constraintName="uk_agencies_kernel_agency_id"/>
+    </changeSet>
+
+    <include file="db/changelog/changes/10-free-plan-two-agencies.xml"/>
+    <include file="db/changelog/changes/11-vehicle-kernel-resource-id.xml"/>
+    <include file="db/changelog/changes/12-pricing-monthly-driver-dossier.xml"/>
+    <include file="db/changelog/changes/13-notification-read-org.xml"/>
+
 </databaseChangeLog>

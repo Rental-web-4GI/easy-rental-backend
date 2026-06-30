@@ -4,6 +4,7 @@ import com.yowyob.easyrental.modules.driver.dto.DriverDetailResponseDTO;
 import com.yowyob.easyrental.modules.driver.dto.DriverResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import org.springframework.http.codec.multipart.FilePart;
@@ -20,7 +21,9 @@ public interface DriverUseCase {
     Mono<DriverResponseDTO> createDriver(UUID orgId,
             UUID agencyId,
             String firstname, String lastname, String tel, Integer age, Integer gender,
-            FilePart profilFile, FilePart cniFile, FilePart licenseFile);
+            String cniNumber, String licenseNumber, java.time.LocalDate licenseExpiry, Integer yearsExperience,
+            FilePart profilFile, FilePart cniFile, FilePart licenseFile,
+            BigDecimal pricePerHour, BigDecimal pricePerDay, BigDecimal pricePerMonth);
     Flux<DriverResponseDTO> getDriversByOrg(UUID orgId);
     Mono<DriverDetailResponseDTO> getDriverDetails(UUID id);
     Flux<DriverResponseDTO> getDriversByAgency(UUID agencyId);
@@ -29,5 +32,6 @@ public interface DriverUseCase {
     Mono<DriverResponseDTO> changeAgency(UUID driverId, UUID newAgencyId);
     Mono<DriverDetailResponseDTO> updateDriverPricing(UUID id, PricingUpdateDTO request);
     Mono<DriverDetailResponseDTO> updateDriverSchedules(UUID id, ScheduleUpdateDTO request);
+    Mono<DriverResponseDTO> updateDriverStatus(UUID id, String status);
     Mono<Void> deleteDriver(UUID id);
 }

@@ -69,6 +69,7 @@ public class NotificationUseCaseImpl implements NotificationUseCase {
                 .driverId(driverId)
                 .createdAt(LocalDateTime.now())
                 .isRead(false)
+                .isReadOrg(false)
                 .details(details)
                 .isNewRecord(true)
                 .build();
@@ -121,10 +122,24 @@ public class NotificationUseCaseImpl implements NotificationUseCase {
 
     // --- ACTIONS ---
     @Transactional
-    public Mono<Void> markAsRead(UUID notificationId) {
+    public Mono<Void> markAsReadAgency(UUID notificationId) {
+        return markAsRead(notificationId, "AGENCY");
+    }
+
+    @Transactional
+    public Mono<Void> markAsReadOrganization(UUID notificationId) {
+        return markAsRead(notificationId, "ORGANIZATION");
+    }
+
+    @Transactional
+    public Mono<Void> markAsRead(UUID notificationId, String context) {
         return notificationRepository.findById(notificationId)
                 .flatMap(n -> {
-                    n.setIsRead(true);
+                    if ("ORGANIZATION".equalsIgnoreCase(context)) {
+                        n.setIsReadOrg(true);
+                    } else {
+                        n.setIsRead(true);
+                    }
                     return notificationRepository.save(n);
                 }).then();
     }

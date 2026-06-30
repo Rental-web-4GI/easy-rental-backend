@@ -22,6 +22,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -74,6 +75,41 @@ class RentalPaymentUseCaseImplTest {
         StepVerifier.create(rentalPaymentUseCase.processPayment(
                         rentalId, new PaymentRequest(BigDecimal.valueOf(1000), PaymentMethod.CASH)))
                 .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldConfirmWalkInReservationWithoutClientId() {
+        UUID rentalId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        RentalEntity rental = RentalEntity.builder()
+                .id(rentalId)
+                .agencyId(agencyId)
+                .clientId(null)
+                .driverId(UUID.randomUUID())
+                .vehicleId(UUID.randomUUID())
+                .status(RentalStatus.PENDING)
+                .totalAmount(BigDecimal.valueOf(10000))
+                .amountPaid(BigDecimal.ZERO)
+                .startDate(LocalDateTime.now())
+                .endDate(LocalDateTime.now().plusDays(2))
+                .build();
+        AgencyEntity agency = AgencyEntity.builder().id(agencyId).monthlyRevenue(0.0).build();
+
+        when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(rental));
+        when(paymentRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
+        when(agencyRepository.save(any())).thenReturn(Mono.just(agency));
+        when(scheduleService.addUnavailability(any(), any(), any(), any())).thenReturn(Mono.empty());
+        when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        doReturn(Mono.just(mock(com.yowyob.easyrental.modules.notification.dto.NotificationResponseDTO.class)))
+                .when(notificationService)
+                .createNotification(nullable(UUID.class), nullable(UUID.class), any(), any(),
+                        nullable(UUID.class), nullable(UUID.class), any(), any(Object[].class));
+
+        StepVerifier.create(rentalPaymentUseCase.processPayment(
+                        rentalId, new PaymentRequest(BigDecimal.valueOf(6000), PaymentMethod.CASH)))
+                .expectNextMatches(saved -> saved.getStatus() == RentalStatus.RESERVED)
                 .verifyComplete();
     }
 }

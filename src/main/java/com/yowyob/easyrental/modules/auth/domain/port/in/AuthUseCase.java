@@ -16,6 +16,7 @@ import reactor.core.publisher.Mono;
  */
 public interface AuthUseCase {
     Mono<AuthResponse> login(LoginRequest request);
+    Mono<AuthResponse> confirmMfa(String mfaToken, String code);
     Mono<UserEntity> getCurrentUser();
     Mono<AuthResponse> refreshToken(String oldToken);
     Mono<UserEntity> registerClient(RegisterRequest request);

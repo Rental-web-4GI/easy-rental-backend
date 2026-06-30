@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface AgencyRepository extends R2dbcRepository<AgencyEntity, UUID> {
     Flux<AgencyEntity> findAllByOrganizationId(UUID organizationId);
 
+    Mono<Long> countByOrganizationId(UUID organizationId);
+
     @Query("SELECT organization_id FROM agencies WHERE id = :agencyId")
     Mono<UUID> findOrgIdByAgencyId(UUID agencyId);
 

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -51,5 +52,10 @@ public class RentalRepositoryAdapter implements RentalRepositoryPort {
     @Override
     public Flux<RentalEntity> findAllByOrganizationIdAndStatusIn(UUID orgId, List<RentalStatus> statuses) {
         return rentalRepository.findAllByOrganizationIdAndStatusIn(orgId, statuses);
+    }
+
+    @Override
+    public Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end) {
+        return rentalRepository.countConflictingRentals(vehicleId, start, end);
     }
 }

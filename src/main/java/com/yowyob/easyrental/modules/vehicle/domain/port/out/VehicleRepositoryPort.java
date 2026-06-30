@@ -24,6 +24,8 @@ public interface VehicleRepositoryPort {
 
     Mono<UUID> findOrgIdByVehicleId(UUID vehicleId);
 
+    Mono<Long> countByCategoryId(UUID categoryId);
+
     Flux<VehicleEntity> findAllByOrganizationIdAndCategoryId(UUID organizationId, UUID categoryId);
 
     Flux<VehicleEntity> findAllByAgencyIdAndCategoryId(UUID agencyId, UUID categoryId);

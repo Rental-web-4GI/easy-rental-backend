@@ -10,7 +10,18 @@ import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRe
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
+import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
+import com.yowyob.easyrental.kernel.application.KernelLocalOrganizationLinkService;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
+import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
+import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
+import com.yowyob.easyrental.shared.exception.ValidationException;
+import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.codec.multipart.FilePart;
@@ -20,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -32,6 +46,10 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final MediaUseCase mediaService;
     private final UserRepositoryPort userRepository;
     private final SubscriptionUseCase subscriptionUseCase;
+    private final KernelClientProperties kernelProperties;
+    private final KernelOrganizationAdapter kernelOrganizationAdapter;
+    private final KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
+    private final KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -90,6 +108,200 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                     return organizationRepository.save(org);
                 })
                 .map(orgMapper::toDto);
+    }
+
+    @Override
+    @Transactional
+    public Mono<OrgResponseDTO> completeOnboarding(OrgUpdateDTO request) {
+        return ReactiveSecurityContextHolder.getContext()
+                .flatMap(ctx -> resolveCurrentUser(ctx.getAuthentication()))
+                .switchIfEmpty(Mono.error(new ValidationException("Authenticated user not found")))
+                .flatMap(user -> organizationRepository.findByOwnerId(user.getId())
+                        .flatMap(existing -> finalizeOnboardingUpdate(existing, request))
+                        .switchIfEmpty(Mono.defer(() -> createOrganizationForOwner(user, request))));
+    }
+
+    private Mono<OrgResponseDTO> finalizeOnboardingUpdate(OrganizationEntity org, OrgUpdateDTO request) {
+        applyUpdateFields(org, request);
+        boolean isProfileComplete = checkProfileCompleteness(org);
+        org.setIsVerified(isProfileComplete);
+        org.setVerificationDate(isProfileComplete ? java.time.LocalDateTime.now() : null);
+        return organizationRepository.save(org).map(orgMapper::toDto);
+    }
+
+    private Mono<OrgResponseDTO> createOrganizationForOwner(UserEntity user, OrgUpdateDTO request) {
+        if (kernelProperties.isIntegrationEnabled()) {
+            return kernelCompleteOnboarding(user, request);
+        }
+        return localCompleteOnboarding(user, request);
+    }
+
+    private Mono<OrgResponseDTO> localCompleteOnboarding(UserEntity user, OrgUpdateDTO request) {
+        return planRepository.findByName("FREE")
+                .switchIfEmpty(Mono.error(new ValidationException("Plan FREE not configured")))
+                .flatMap(freePlan -> {
+                    OrganizationEntity org = OrganizationEntity.builder()
+                            .id(UUID.randomUUID())
+                            .ownerId(user.getId())
+                            .country("CM")
+                            .subscriptionPlanId(freePlan.getId())
+                            .subscriptionAutoRenew(true)
+                            .isVerified(false)
+                            .isDriverBookingRequired(
+                                    request.isDriverBookingRequired() != null && request.isDriverBookingRequired())
+                            .isNewRecord(true)
+                            .build();
+                    applyUpdateFields(org, request);
+                    boolean isProfileComplete = checkProfileCompleteness(org);
+                    org.setIsVerified(isProfileComplete);
+                    org.setVerificationDate(isProfileComplete ? java.time.LocalDateTime.now() : null);
+                    return organizationRepository.save(Objects.requireNonNull(org))
+                            .flatMap(savedOrg -> subscriptionUseCase
+                                    .createHistoryRecord(savedOrg.getId(), freePlan.getName(), null)
+                                    .thenReturn(savedOrg));
+                })
+                .map(orgMapper::toDto);
+    }
+
+    private Mono<OrgResponseDTO> kernelCompleteOnboarding(UserEntity user, OrgUpdateDTO request) {
+        return kernelLocalOrganizationLinkService.ensureLocalOrganization(user, request)
+                .map(orgMapper::toDto)
+                .switchIfEmpty(Mono.defer(() -> createKernelOrganizationRemotely(user, request)));
+    }
+
+    private Mono<OrgResponseDTO> createKernelOrganizationRemotely(UserEntity user, OrgUpdateDTO request) {
+        return KernelContextHolder.current()
+                .flatMap(ctx -> {
+                    if (ctx.bearerToken().isEmpty()) {
+                        return Mono.error(new ValidationException(
+                                "Missing kernel session. Please sign in again."));
+                    }
+                    return Mono.just(ctx);
+                })
+                .flatMap(ctx -> planRepository.findByName("FREE")
+                        .switchIfEmpty(Mono.error(new ValidationException("Plan FREE not configured")))
+                        .flatMap(freePlan -> resolveKernelActorId(user, ctx)
+                                .flatMap(actorId -> {
+                                    Map<String, Object> orgPayload = new HashMap<>();
+                                    orgPayload.put("businessActorId", actorId.toString());
+                                    orgPayload.put("code", "ORG-" + UUID.randomUUID().toString()
+                                            .substring(0, 8).toUpperCase());
+                                    orgPayload.put("legalName", request.name());
+                                    orgPayload.put("displayName", request.name());
+                                    orgPayload.put("organizationType", "PRIVATE_COMPANY");
+
+                                    return kernelOrganizationAdapter.createOrganization(orgPayload, ctx)
+                                            .flatMap(kernelOrg -> {
+                                                UUID kernelOrgId = parseUuid(
+                                                        KernelResponseSupport.textOrNull(kernelOrg, "id"));
+                                                String governance = kernelOrg.path("governanceStatus")
+                                                        .asText("PENDING_APPROVAL");
+
+                                                OrganizationEntity org = OrganizationEntity.builder()
+                                                        .id(UUID.randomUUID())
+                                                        .ownerId(user.getId())
+                                                        .country("CM")
+                                                        .subscriptionPlanId(freePlan.getId())
+                                                        .subscriptionAutoRenew(true)
+                                                        .isVerified(false)
+                                                        .isDriverBookingRequired(
+                                                                request.isDriverBookingRequired() != null
+                                                                        && request.isDriverBookingRequired())
+                                                        .kernelOrganizationId(kernelOrgId)
+                                                        .governanceStatus(governance)
+                                                        .isNewRecord(true)
+                                                        .build();
+                                                applyUpdateFields(org, request);
+                                                boolean isProfileComplete = checkProfileCompleteness(org);
+                                                org.setIsVerified(isProfileComplete);
+                                                org.setVerificationDate(isProfileComplete
+                                                        ? java.time.LocalDateTime.now() : null);
+
+                                                return organizationRepository.save(Objects.requireNonNull(org))
+                                                        .flatMap(savedOrg -> {
+                                                            if (user.getKernelActorId() == null) {
+                                                                user.setKernelActorId(actorId);
+                                                                return userRepository.save(user).thenReturn(savedOrg);
+                                                            }
+                                                            return Mono.just(savedOrg);
+                                                        })
+                                                        .flatMap(savedOrg -> kernelOrganizationBootstrapService
+                                                                .subscribeDefaultServices(kernelOrgId, ctx)
+                                                                .then(subscriptionUseCase
+                                                                        .createHistoryRecord(savedOrg.getId(),
+                                                                                freePlan.getName(), null))
+                                                                .thenReturn(savedOrg));
+                                            });
+                                })))
+                .map(orgMapper::toDto);
+    }
+
+    private Mono<UUID> resolveKernelActorId(UserEntity user, KernelRequestContext context) {
+        if (user.getKernelActorId() != null) {
+            return Mono.just(user.getKernelActorId());
+        }
+        Map<String, Object> actorPayload = new HashMap<>();
+        String displayName = hasText(user.getFullname()) ? user.getFullname().trim() : user.getEmail();
+        actorPayload.put("name", displayName);
+        actorPayload.put("businessId", "ER-" + UUID.randomUUID().toString().substring(0, 8));
+        actorPayload.put("role", "OWNER");
+        actorPayload.put("type", "BUSINESS");
+        actorPayload.put("isIndividual", true);
+        actorPayload.put("isActive", true);
+        return kernelOrganizationAdapter.createBusinessActor(actorPayload, context)
+                .map(node -> parseUuid(KernelResponseSupport.textOrNull(node, "id")));
+    }
+
+    private void applyUpdateFields(OrganizationEntity org, OrgUpdateDTO request) {
+        if (hasText(request.name())) {
+            org.setName(request.name());
+        }
+        if (hasText(request.description())) {
+            org.setDescription(request.description());
+        }
+        if (hasText(request.address())) {
+            org.setAddress(request.address());
+        }
+        if (hasText(request.city())) {
+            org.setCity(request.city());
+        }
+        if (hasText(request.postalCode())) {
+            org.setPostalCode(request.postalCode());
+        }
+        if (hasText(request.region())) {
+            org.setRegion(request.region());
+        }
+        if (hasText(request.phone())) {
+            org.setPhone(request.phone());
+        }
+        if (hasText(request.email())) {
+            org.setEmail(request.email());
+        }
+        if (hasText(request.website())) {
+            org.setWebsite(request.website());
+        }
+        if (hasText(request.timezone())) {
+            org.setTimezone(request.timezone());
+        }
+        if (hasText(request.logoUrl())) {
+            org.setLogoUrl(request.logoUrl());
+        }
+        if (hasText(request.registrationNumber())) {
+            org.setRegistrationNumber(request.registrationNumber());
+        }
+        if (hasText(request.taxNumber())) {
+            org.setTaxNumber(request.taxNumber());
+        }
+        if (request.isDriverBookingRequired() != null) {
+            org.setIsDriverBookingRequired(request.isDriverBookingRequired());
+        }
+    }
+
+    private UUID parseUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return UUID.fromString(value);
     }
 
     @Transactional
@@ -211,11 +423,48 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
 
     public Mono<OrgUserResponseDTO> getCurrentOrgAndUser() {
         return ReactiveSecurityContextHolder.getContext()
-            .map(ctx -> ctx.getAuthentication().getName())
-            .flatMap(userRepository::findByEmail)
+            .flatMap(ctx -> resolveCurrentUser(ctx.getAuthentication()))
             .flatMap(user -> organizationRepository.findByOwnerId(user.getId())
+                    .switchIfEmpty(Mono.defer(() -> kernelLocalOrganizationLinkService
+                            .ensureLocalOrganization(user, null)))
+                    .flatMap(this::syncGovernanceFromKernelIfNeeded)
                     .map(org -> new OrgUserResponseDTO(user, orgMapper.toDto(org)))
                     .defaultIfEmpty(new OrgUserResponseDTO(user, null)));
+    }
+
+    private Mono<OrganizationEntity> syncGovernanceFromKernelIfNeeded(OrganizationEntity org) {
+        if (!kernelProperties.isIntegrationEnabled() || org.getKernelOrganizationId() == null) {
+            return Mono.just(org);
+        }
+        return KernelContextHolder.current()
+                .flatMap(ctx -> {
+                    if (ctx.bearerToken().isEmpty()) {
+                        return Mono.just(org);
+                    }
+                    return kernelOrganizationAdapter.getOrganization(org.getKernelOrganizationId(), ctx)
+                            .map(kernelOrg -> KernelResponseSupport.textOrNull(kernelOrg, "governanceStatus"))
+                            .flatMap(kernelGovernance -> {
+                                if (kernelGovernance == null
+                                        || kernelGovernance.equals(org.getGovernanceStatus())) {
+                                    return Mono.just(org);
+                                }
+                                org.setGovernanceStatus(kernelGovernance);
+                                return organizationRepository.save(org);
+                            })
+                            .onErrorResume(ex -> Mono.just(org));
+                });
+    }
+
+    private Mono<UserEntity> resolveCurrentUser(org.springframework.security.core.Authentication authentication) {
+        if (authentication instanceof KernelAuthenticationToken kernelAuth) {
+            try {
+                UUID kernelUserId = UUID.fromString(kernelAuth.getClaims().subject());
+                return userRepository.findByKernelUserId(kernelUserId);
+            } catch (IllegalArgumentException ex) {
+                return Mono.empty();
+            }
+        }
+        return userRepository.findByEmail(authentication.getName());
     }
 
     @Override

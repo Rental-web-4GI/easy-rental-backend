@@ -4,7 +4,8 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * DTO pour répondre avec une notification
+ * DTO pour répondre avec une notification.
+ * Les états de lecture agence et organisation sont indépendants.
  */
 public record NotificationResponseDTO(
         UUID id,
@@ -15,6 +16,7 @@ public record NotificationResponseDTO(
         UUID vehicleId,
         UUID driverId,
         LocalDateTime createdAt,
-        Boolean isRead,
+        Boolean isReadAgency,
+        Boolean isReadOrg,
         String details
 ) {}

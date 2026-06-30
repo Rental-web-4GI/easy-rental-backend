@@ -92,6 +92,7 @@ public class PosteUseCaseImpl implements PosteUseCase {
                         poste.getId(),
                         poste.getName(),
                         poste.getDescription(),
+                        poste.getOrganizationId(),
                         perms
                 ));
     }

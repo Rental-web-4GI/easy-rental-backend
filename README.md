@@ -169,6 +169,34 @@ Si vous lancez l'application avec le profil `dev`, la classe `DataSeeder.java` v
 
 ---
 
+### 4. Intégration kernel-core (P0)
+
+Pour déléguer auth, organisations, agences et RBAC au kernel production :
+
+```bash
+# Depuis la racine du dépôt easy-rental-backend
+cp kernel-core.credentials.env.example kernel-core.credentials.env
+# Éditer kernel-core.credentials.env avec les secrets DevOps
+
+set -a && source kernel-core.credentials.env && set +a
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+| Variable | Description |
+|---|---|
+| `KERNEL_INTEGRATION_ENABLED` | `true` = délégation kernel, `false` = mode local (défaut) |
+| `KERNEL_BASE_URL` | URL kernel (défaut `https://kernel-core.yowyob.com`) |
+| `KERNEL_CLIENT_ID` | ClientApplication (`X-Client-Id`) |
+| `KERNEL_API_KEY` | Secret machine (`X-Api-Key`) |
+| `KERNEL_TENANT_ID` | UUID tenant (`X-Tenant-Id`) |
+| `KERNEL_JWKS_URI` | JWKS pour validation JWT RS256 |
+
+Scripts de validation : `scripts/kernel-validate-login.sh`, `scripts/kernel-bootstrap-org.sh`.
+
+Voir aussi : `REFERENCE-INTEGRATION-KERNEL-EASY-RENTAL.md` (racine du dépôt).
+
+---
+
 ## 🔐 Sécurité et RBAC
 
 L'API est sécurisée par **JWT (JSON Web Token)**.

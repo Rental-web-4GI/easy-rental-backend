@@ -66,11 +66,18 @@ public class NotificationEntity implements Persistable<UUID> {
     private LocalDateTime createdAt;
 
     /**
-     * Indique si la notification a été lue
+     * Indique si la notification a été lue côté agence
      */
     @Column("is_read")
     @Builder.Default
     private Boolean isRead = false;
+
+    /**
+     * Indique si la notification a été lue côté organisation (vue agrégée)
+     */
+    @Column("is_read_org")
+    @Builder.Default
+    private Boolean isReadOrg = false;
 
     /**
      * Détails supplémentaires (message personnalisé, JSON, etc.)

@@ -18,6 +18,7 @@ public interface PricingUseCase {
             ResourceType type,
             UUID resourceId,
             BigDecimal perHour,
-            BigDecimal perDay);
+            BigDecimal perDay,
+            BigDecimal perMonth);
     Mono<PricingEntity> getPricing(ResourceType type, UUID resourceId);
 }

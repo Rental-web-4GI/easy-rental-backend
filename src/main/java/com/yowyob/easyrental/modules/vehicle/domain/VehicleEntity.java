@@ -48,6 +48,8 @@ public class VehicleEntity implements Persistable<UUID> {
 
     private LocalDateTime createdAt;
 
+    private UUID kernelResourceId;
+
     @Transient @Builder.Default @JsonIgnore private boolean isNewRecord = false;
     @Override public boolean isNew() { return isNewRecord || id == null; }
 }

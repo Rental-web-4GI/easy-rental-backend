@@ -20,6 +20,8 @@ public interface AgencyRepositoryPort {
 
     Flux<AgencyEntity> findAllByOrganizationId(UUID organizationId);
 
+    Mono<Long> countByOrganizationId(UUID organizationId);
+
     Mono<UUID> findOrgIdByAgencyId(UUID agencyId);
 
     Flux<AgencyEntity> searchAgencies(String keyword, String city);

@@ -1,5 +1,7 @@
 package com.yowyob.easyrental.modules.media.application;
 
+import com.yowyob.easyrental.kernel.domain.KernelAuthClaims;
+import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
@@ -22,6 +24,8 @@ import reactor.test.StepVerifier;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -96,6 +100,43 @@ class MediaUseCaseImplTest {
         when(mediaRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
 
         var auth = new UsernamePasswordAuthenticationToken("org@test.com", null);
+
+        StepVerifier.create(mediaUseCase.uploadFile(filePart)
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
+                .expectNextMatches(m -> m.getFileUrl().contains("/uploads/"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldUploadFileForKernelOrganizationUser() throws Exception {
+        Path tempDir = Files.createTempDirectory("upload-kernel-org");
+        ReflectionTestUtils.setField(mediaUseCase, "uploadDir", tempDir.toString());
+        ReflectionTestUtils.setField(mediaUseCase, "baseUrl", "http://localhost:8080");
+
+        UUID userId = UUID.randomUUID();
+        UUID kernelUserId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(userId).email("org@test.com").role("ORGANIZATION").build();
+        OrganizationEntity org = OrganizationEntity.builder().id(UUID.randomUUID()).name("Sahel org").build();
+        FilePart filePart = mock(FilePart.class);
+        HttpHeaders headers = new HttpHeaders();
+
+        when(filePart.filename()).thenReturn("vehicle.png");
+        when(filePart.headers()).thenReturn(headers);
+        when(filePart.transferTo(any(Path.class))).thenReturn(Mono.empty());
+        when(userRepository.findByKernelUserId(kernelUserId)).thenReturn(Mono.just(user));
+        when(organizationRepository.findByOwnerId(userId)).thenReturn(Mono.just(org));
+        when(mediaRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        KernelAuthClaims claims = new KernelAuthClaims(
+                kernelUserId.toString(),
+                kernelUserId.toString(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                List.of("ROLE_ORGANIZATION_ADMIN"),
+                List.of());
+        var auth = new KernelAuthenticationToken(claims, "kernel-token");
 
         StepVerifier.create(mediaUseCase.uploadFile(filePart)
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))

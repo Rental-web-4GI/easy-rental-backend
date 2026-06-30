@@ -1,9 +1,14 @@
 package com.yowyob.easyrental.modules.vehicle.application;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelResourceAdapter;
+import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
+import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
 import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
@@ -61,6 +66,8 @@ class VehicleUseCaseImplTest {
     @Mock private PricingUseCase pricingService;
     @Mock private ReviewUseCase reviewService;
     @Mock private ObjectMapper objectMapper;
+    @Mock private KernelClientProperties kernelProperties;
+    @Mock private KernelResourceAdapter kernelResourceAdapter;
     @InjectMocks private VehicleUseCaseImpl vehicleUseCase;
 
     private UUID categoryId;
@@ -145,6 +152,93 @@ class VehicleUseCaseImplTest {
         stubEnrichVehicle();
 
         StepVerifier.create(vehicleUseCase.createVehicle(orgId, request))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldCreateVehicleViaKernel() throws Exception {
+        UUID orgId = UUID.randomUUID();
+        UUID planId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        UUID kernelOrgId = UUID.randomUUID();
+        UUID kernelAgencyId = UUID.randomUUID();
+        OrganizationEntity org = OrganizationEntity.builder()
+                .id(orgId)
+                .subscriptionPlanId(planId)
+                .currentVehicles(0)
+                .kernelOrganizationId(kernelOrgId)
+                .build();
+        SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder()
+                .id(planId).name("FREE").maxVehicles(10).build();
+        VehicleRequestDTO request = new VehicleRequestDTO(
+                agencyId, categoryId, "AB-123", "VIN1", "Toyota", "Corolla",
+                LocalDateTime.now(), 5, 10000.0, "AVAILABLE", "Red", "AUTO",
+                null, null, null, null, null, null);
+        KernelRequestContext kernelContext = KernelRequestContext.builder()
+                .bearerToken(java.util.Optional.of("token"))
+                .build();
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(
+                AgencyEntity.builder().id(agencyId).kernelAgencyId(kernelAgencyId)
+                        .totalVehicles(0).activeVehicles(0).build()));
+        when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
+        when(kernelResourceAdapter.createResource(any(), any(), any(), any()))
+                .thenReturn(Mono.just(JsonNodeFactory.instance.objectNode().put("id", UUID.randomUUID().toString())));
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(vehicleRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(organizationRepository.save(any())).thenReturn(Mono.just(org));
+        when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        stubEnrichVehicle();
+
+        StepVerifier.create(vehicleUseCase.createVehicle(orgId, request)
+                        .contextWrite(ctx -> KernelContextHolder.withContext(ctx, kernelContext)))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldFallbackToLocalVehicleWhenKernelResourceQuotaUnavailable() throws Exception {
+        UUID orgId = UUID.randomUUID();
+        UUID planId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        UUID kernelOrgId = UUID.randomUUID();
+        UUID kernelAgencyId = UUID.randomUUID();
+        OrganizationEntity org = OrganizationEntity.builder()
+                .id(orgId)
+                .subscriptionPlanId(planId)
+                .currentVehicles(0)
+                .kernelOrganizationId(kernelOrgId)
+                .build();
+        SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder()
+                .id(planId).name("FREE").maxVehicles(10).build();
+        VehicleRequestDTO request = new VehicleRequestDTO(
+                agencyId, categoryId, "AB-999", "VIN9", "Toyota", "Yaris",
+                LocalDateTime.now(), 5, 10000.0, "AVAILABLE", "Blue", "AUTO",
+                null, null, null, null, null, null);
+        KernelRequestContext kernelContext = KernelRequestContext.builder()
+                .bearerToken(java.util.Optional.of("token"))
+                .build();
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(
+                AgencyEntity.builder().id(agencyId).kernelAgencyId(kernelAgencyId)
+                        .totalVehicles(0).activeVehicles(0).build()));
+        when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
+        when(kernelResourceAdapter.createResource(any(), any(), any(), any()))
+                .thenReturn(Mono.error(new RuntimeException(
+                        "ORGANIZATION_SERVICE_QUOTA_UNAVAILABLE: Organization service request quota unavailable.")));
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+        when(vehicleRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(organizationRepository.save(any())).thenReturn(Mono.just(org));
+        when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        stubEnrichVehicle();
+
+        StepVerifier.create(vehicleUseCase.createVehicle(orgId, request)
+                        .contextWrite(ctx -> KernelContextHolder.withContext(ctx, kernelContext)))
                 .expectNextCount(1)
                 .verifyComplete();
     }
@@ -247,7 +341,7 @@ class VehicleUseCaseImplTest {
     void shouldUpdateVehiclePricing() {
         UUID id = sampleVehicle.getId();
         when(vehicleRepository.findById(id)).thenReturn(Mono.just(sampleVehicle));
-        when(pricingService.setPricing(any(), eq(ResourceType.VEHICLE), eq(id), any(), any()))
+        when(pricingService.setPricing(any(), eq(ResourceType.VEHICLE), eq(id), any(), any(), any()))
                 .thenReturn(Mono.just(new PricingEntity()));
         when(scheduleService.getResourceSchedule(ResourceType.VEHICLE, id)).thenReturn(Flux.empty());
         when(reviewService.getReviews(ResourceType.VEHICLE, id)).thenReturn(Flux.empty());
@@ -256,7 +350,7 @@ class VehicleUseCaseImplTest {
         stubEnrichVehicle();
 
         StepVerifier.create(vehicleUseCase.updateVehiclePricing(id,
-                        new PricingUpdateDTO(BigDecimal.TEN, BigDecimal.valueOf(100))))
+                        new PricingUpdateDTO(BigDecimal.TEN, BigDecimal.valueOf(100), null)))
                 .expectNextMatches(VehicleDetailResponseDTO.class::isInstance)
                 .verifyComplete();
     }

@@ -41,6 +41,11 @@ public class AgencyRepositoryAdapter implements AgencyRepositoryPort {
     }
 
     @Override
+    public Mono<Long> countByOrganizationId(UUID organizationId) {
+        return agencyRepository.countByOrganizationId(organizationId);
+    }
+
+    @Override
     public Mono<UUID> findOrgIdByAgencyId(UUID agencyId) {
         return agencyRepository.findOrgIdByAgencyId(agencyId);
     }

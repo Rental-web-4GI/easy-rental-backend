@@ -51,8 +51,20 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage())));
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public Mono<ResponseEntity<ErrorResponse>> handleRuntime(RuntimeException ex) {
+        return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(), ex.getMessage())));
+    }
+
     @ExceptionHandler(Exception.class)
     public Mono<ResponseEntity<ErrorResponse>> handleGeneral(Exception ex) {
+        String message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+        if (message.contains("timed out") || message.contains("Timeout")) {
+            return Mono.just(ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(HttpStatus.BAD_REQUEST.value(),
+                            "KERNEL_TIMEOUT: Connexion au kernel trop lente. Réessayez dans quelques secondes.")));
+        }
         return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
                         "An internal error occurred")));

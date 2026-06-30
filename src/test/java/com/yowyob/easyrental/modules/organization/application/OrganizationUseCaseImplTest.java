@@ -1,5 +1,13 @@
 package com.yowyob.easyrental.modules.organization.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
+import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
+import com.yowyob.easyrental.kernel.application.KernelLocalOrganizationLinkService;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
@@ -12,9 +20,9 @@ import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUse
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,7 +35,11 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,7 +51,30 @@ class OrganizationUseCaseImplTest {
     @Mock private MediaUseCase mediaService;
     @Mock private UserRepositoryPort userRepository;
     @Mock private SubscriptionUseCase subscriptionUseCase;
-    @InjectMocks private OrganizationUseCaseImpl organizationUseCase;
+    @Mock private KernelClientProperties kernelProperties;
+    @Mock private KernelOrganizationAdapter kernelOrganizationAdapter;
+    @Mock private KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
+    @Mock private KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
+
+    private OrganizationUseCaseImpl organizationUseCase;
+
+    @BeforeEach
+    void setUp() {
+        organizationUseCase = new OrganizationUseCaseImpl(
+                organizationRepository,
+                planRepository,
+                orgMapper,
+                mediaService,
+                userRepository,
+                subscriptionUseCase,
+                kernelProperties,
+                kernelOrganizationAdapter,
+                kernelOrganizationBootstrapService,
+                kernelLocalOrganizationLinkService);
+        lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+        lenient().when(kernelLocalOrganizationLinkService.ensureLocalOrganization(any(), any()))
+                .thenReturn(Mono.empty());
+    }
 
     @Test
     void shouldGetOrganization() {
@@ -211,12 +246,76 @@ class OrganizationUseCaseImplTest {
         when(userRepository.findByEmail("owner@test.com")).thenReturn(Mono.just(user));
         when(organizationRepository.findByOwnerId(user.getId())).thenReturn(Mono.just(org));
         when(orgMapper.toDto(org)).thenReturn(dto);
-        var auth = new UsernamePasswordAuthenticationToken("owner@test.com", null);
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken("owner@test.com", null);
 
         StepVerifier.create(organizationUseCase.getCurrentOrgAndUser()
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
                 .expectNextMatches(r -> r.user().getEmail().equals("owner@test.com"))
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldSyncGovernanceStatusFromKernelOnGetCurrentOrgAndUser() throws Exception {
+        UUID kernelOrgId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email("owner@test.com").build();
+        OrganizationEntity org = OrganizationEntity.builder()
+                .id(UUID.randomUUID())
+                .name("Sahel org")
+                .kernelOrganizationId(kernelOrgId)
+                .governanceStatus("PENDING_APPROVAL")
+                .build();
+        OrganizationEntity approvedOrg = OrganizationEntity.builder()
+                .id(org.getId())
+                .name(org.getName())
+                .kernelOrganizationId(kernelOrgId)
+                .governanceStatus("APPROVED")
+                .build();
+        OrgResponseDTO dto = mock(OrgResponseDTO.class);
+        ObjectNode kernelOrg = new ObjectMapper().createObjectNode().put("governanceStatus", "APPROVED");
+        KernelRequestContext kernelContext = KernelRequestContext.builder()
+                .bearerToken(java.util.Optional.of("token"))
+                .build();
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(userRepository.findByEmail("owner@test.com")).thenReturn(Mono.just(user));
+        when(organizationRepository.findByOwnerId(user.getId())).thenReturn(Mono.just(org));
+        when(kernelOrganizationAdapter.getOrganization(eq(kernelOrgId), eq(kernelContext)))
+                .thenReturn(Mono.just(kernelOrg));
+        when(organizationRepository.save(any())).thenReturn(Mono.just(approvedOrg));
+        when(orgMapper.toDto(approvedOrg)).thenReturn(dto);
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken("owner@test.com", null);
+
+        StepVerifier.create(organizationUseCase.getCurrentOrgAndUser()
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
+                        .contextWrite(ctx -> KernelContextHolder.withContext(ctx, kernelContext)))
+                .expectNextMatches(r -> r.user().getEmail().equals("owner@test.com"))
+                .verifyComplete();
+
+        verify(organizationRepository).save(any());
+    }
+
+    @Test
+    void shouldSkipKernelGovernanceSyncWhenIntegrationDisabled() {
+        UUID kernelOrgId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email("owner@test.com").build();
+        OrganizationEntity org = OrganizationEntity.builder()
+                .id(UUID.randomUUID())
+                .kernelOrganizationId(kernelOrgId)
+                .governanceStatus("PENDING_APPROVAL")
+                .build();
+        OrgResponseDTO dto = mock(OrgResponseDTO.class);
+        when(userRepository.findByEmail("owner@test.com")).thenReturn(Mono.just(user));
+        when(organizationRepository.findByOwnerId(user.getId())).thenReturn(Mono.just(org));
+        when(orgMapper.toDto(org)).thenReturn(dto);
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken("owner@test.com", null);
+
+        StepVerifier.create(organizationUseCase.getCurrentOrgAndUser()
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        verify(kernelOrganizationAdapter, never()).getOrganization(any(), any());
+        verify(organizationRepository, never()).save(any());
     }
 
     @Test

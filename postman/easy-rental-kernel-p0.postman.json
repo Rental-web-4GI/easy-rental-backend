@@ -1,0 +1,108 @@
+{
+  "info": {
+    "name": "Easy Rental — Kernel P0",
+    "description": "Collection Postman pour valider l'intégration kernel P0. Configurer les variables d'environnement (pas de secrets en dur).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "kernel_base_url", "value": "https://kernel-core.yowyob.com" },
+    { "key": "tenant_id", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "client_id", "value": "{{KERNEL_CLIENT_ID}}" },
+    { "key": "api_key", "value": "{{KERNEL_API_KEY}}" },
+    { "key": "rental_base_url", "value": "http://localhost:8081" },
+    { "key": "access_token", "value": "" },
+    { "key": "mfa_token", "value": "" },
+    { "key": "organization_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Kernel direct",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Client-Id", "value": "{{client_id}}" },
+              { "key": "X-Api-Key", "value": "{{api_key}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"principal\": \"platform-admin\",\n  \"password\": \"{{ADMIN_PASSWORD}}\"\n}"
+            },
+            "url": "{{kernel_base_url}}/api/auth/login"
+          }
+        },
+        {
+          "name": "MFA Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Client-Id", "value": "{{client_id}}" },
+              { "key": "X-Api-Key", "value": "{{api_key}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaToken\": \"{{mfa_token}}\",\n  \"code\": \"{{MFA_CODE}}\"\n}"
+            },
+            "url": "{{kernel_base_url}}/api/auth/login/mfa/confirm"
+          }
+        },
+        {
+          "name": "Users Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "X-Client-Id", "value": "{{client_id}}" },
+              { "key": "X-Api-Key", "value": "{{api_key}}" },
+              { "key": "X-Tenant-Id", "value": "{{tenant_id}}" }
+            ],
+            "url": "{{kernel_base_url}}/api/users/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Easy Rental façade",
+      "item": [
+        {
+          "name": "Login (façade)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"platform-admin\",\n  \"password\": \"{{ADMIN_PASSWORD}}\"\n}"
+            },
+            "url": "{{rental_base_url}}/auth/login"
+          }
+        },
+        {
+          "name": "MFA Confirm (façade)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaToken\": \"{{mfa_token}}\",\n  \"code\": \"{{MFA_CODE}}\"\n}"
+            },
+            "url": "{{rental_base_url}}/auth/login/mfa/confirm"
+          }
+        },
+        {
+          "name": "My Permissions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{rental_base_url}}/api/users/me/permissions"
+          }
+        }
+      ]
+    }
+  ]
+}

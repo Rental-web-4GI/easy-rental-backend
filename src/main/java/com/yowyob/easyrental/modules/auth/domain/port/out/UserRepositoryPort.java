@@ -11,6 +11,8 @@ public interface UserRepositoryPort {
 
     Mono<UserEntity> findByEmail(String email);
 
+    Mono<UserEntity> findByKernelUserId(UUID kernelUserId);
+
     Mono<UserEntity> findById(UUID id);
 
     Mono<UserEntity> save(UserEntity user);

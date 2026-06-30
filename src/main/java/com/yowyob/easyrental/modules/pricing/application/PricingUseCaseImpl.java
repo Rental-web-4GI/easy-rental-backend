@@ -21,7 +21,8 @@ public class PricingUseCaseImpl implements PricingUseCase {
             ResourceType type,
             UUID resourceId,
             BigDecimal perHour,
-            BigDecimal perDay) {
+            BigDecimal perDay,
+            BigDecimal perMonth) {
         return pricingRepository.findByResourceTypeAndResourceId(type, resourceId)
             .defaultIfEmpty(PricingEntity.builder()
                 .id(UUID.randomUUID())
@@ -34,6 +35,7 @@ public class PricingUseCaseImpl implements PricingUseCase {
             .flatMap(pricing -> {
                 pricing.setPricePerHour(perHour);
                 pricing.setPricePerDay(perDay);
+                pricing.setPricePerMonth(perMonth);
                 pricing.setUpdatedAt(LocalDateTime.now());
                 return pricingRepository.save(pricing);
             });

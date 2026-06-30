@@ -88,4 +88,8 @@ public class OrganizationEntity implements Persistable<UUID> {
 
     @Builder.Default
     private Boolean isDriverBookingRequired = true;
+
+    private UUID kernelOrganizationId;
+    @Builder.Default
+    private String governanceStatus = "APPROVED";
 }

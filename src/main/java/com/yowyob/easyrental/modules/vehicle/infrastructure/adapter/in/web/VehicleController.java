@@ -108,7 +108,7 @@ public class VehicleController {
 
     @Operation(summary = "Mettre à jour le prix de location du véhicule")
     @PutMapping("/{id}/pricing")
-    @PreAuthorize("hasRole('ORGANIZATION')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updatePricing(
             @PathVariable UUID id,
             @RequestBody PricingUpdateDTO request) {
@@ -117,7 +117,7 @@ public class VehicleController {
 
     @Operation(summary = "Ajouter des indisponibilités (Planning) au véhicule")
     @PostMapping("/{id}/schedule")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updateSchedule(
             @PathVariable UUID id,
             @RequestBody ScheduleUpdateDTO request) {
@@ -132,7 +132,7 @@ public class VehicleController {
 
     @Operation(summary = "Mettre à jour les informations d'un véhicule")
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.hasPermission(#orgId, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
     public Mono<ResponseEntity<VehicleResponseDTO>> update(
             @PathVariable UUID id,
             @RequestBody VehicleRequestDTO request) {
@@ -141,7 +141,7 @@ public class VehicleController {
 
     @Operation(summary = "Changer le statut du véhicule (MAINTENANCE, AVAILABLE, RENTED)")
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.hasPermission(#orgId, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
     public Mono<ResponseEntity<VehicleResponseDTO>> updateStatus(@PathVariable UUID id, @RequestParam String status) {
         return vehicleUseCase.updateVehicleStatus(id, status).map(ResponseEntity::ok);
     }

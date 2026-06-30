@@ -12,9 +12,11 @@ import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
+import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitResponse;
 import com.yowyob.easyrental.shared.dto.ScheduleRequestDTO;
+import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
 import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
@@ -26,8 +28,8 @@ import com.yowyob.easyrental.shared.exception.ResourceNotFoundException;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.shared.enums.NotificationReason;
 import com.yowyob.easyrental.shared.enums.NotificationResourceType;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import com.yowyob.easyrental.shared.enums.RentalStatus;
-import com.yowyob.easyrental.shared.enums.RentalType;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,7 +38,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -54,6 +55,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final PricingUseCase pricingService;
     private final ScheduleUseCase scheduleService;
     private final NotificationUseCase notificationService;
+    private final RentalPaymentUseCase rentalPaymentUseCase;
     private final AgencyMapper agencyMapper;
     private final VehicleUseCase vehicleService;
     private final DriverUseCase driverService;
@@ -119,14 +121,11 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         var driverPrice = tuple.getT2();
                         var agency = tuple.getT3();
 
-                        long duration = (request.rentalType() == RentalType.DAILY)
-                            ? Math.max(1, Duration.between(request.startDate(), request.endDate()).toDays())
-                            : Math.max(1, Duration.between(request.startDate(), request.endDate()).toHours());
+                        long duration = RentalDurationCalculator.billableUnits(
+                            request.startDate(), request.endDate(), request.rentalType());
 
-                        BigDecimal vPrice = (request.rentalType() == RentalType.DAILY)
-                            ? vehiclePrice.getPricePerDay() : vehiclePrice.getPricePerHour();
-                        BigDecimal dPrice = (request.rentalType() == RentalType.DAILY)
-                            ? driverPrice.getPricePerDay() : driverPrice.getPricePerHour();
+                        BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
+                        BigDecimal dPrice = RentalDurationCalculator.unitPrice(driverPrice, request.rentalType());
 
                         BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
                         BigDecimal commission = baseAmount.multiply(RentalConstants.PLATFORM_COMMISSION_RATE);
@@ -210,21 +209,26 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 var driverPrice = tuple.getT2();
                 var agency = tuple.getT3();
 
-                long duration = (request.rentalType() == RentalType.DAILY)
-                    ? Math.max(1, Duration.between(request.startDate(), request.endDate()).toDays())
-                    : Math.max(1, Duration.between(request.startDate(), request.endDate()).toHours());
+                long duration = RentalDurationCalculator.billableUnits(
+                    request.startDate(), request.endDate(), request.rentalType());
 
-                BigDecimal vPrice = (request.rentalType() == RentalType.DAILY)
-                    ? vehiclePrice.getPricePerDay() : vehiclePrice.getPricePerHour();
+                BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
                 BigDecimal dPrice = (request.driverId() != null)
-                    ? ((request.rentalType() == RentalType.DAILY)
-                        ? driverPrice.getPricePerDay() : driverPrice.getPricePerHour())
+                    ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
                     : BigDecimal.ZERO;
 
                 BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
                 BigDecimal commission = baseAmount.multiply(BigDecimal.valueOf(0.01));
                 BigDecimal deposit = baseAmount.multiply(BigDecimal.valueOf(0.10));
                 BigDecimal totalFinal = baseAmount.add(commission).add(deposit);
+
+                return rentalRepository.countConflictingRentals(
+                        request.vehicleId(), request.startDate(), request.endDate())
+                    .flatMap(conflicts -> {
+                        if (conflicts > 0) {
+                            return Mono.error(new RentalConflictException(
+                                "Vehicle is already booked for this period."));
+                        }
 
                 RentalEntity rental = RentalEntity.builder()
                     .id(UUID.randomUUID())
@@ -249,10 +253,28 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     .build();
 
                 return rentalRepository.save(rental)
-                    .map(saved -> new RentalInitResponse(
-                        true, "Location agence créée. Veuillez procéder à l'encaissement.",
-                        saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
-                    ));
+                    .flatMap(saved -> {
+                        BigDecimal counterAmount = request.initialPaymentAmount() != null
+                            ? request.initialPaymentAmount()
+                            : totalFinal.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE);
+                        PaymentMethod method = request.paymentMethod() != null
+                            ? request.paymentMethod()
+                            : PaymentMethod.CASH;
+                        RentalInitResponse created = new RentalInitResponse(
+                            true, "Réservation agence créée.",
+                            saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                        );
+                        if (counterAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                            return Mono.just(created);
+                        }
+                        return rentalPaymentUseCase.processPayment(
+                                saved.getId(), new PaymentRequest(counterAmount, method))
+                            .thenReturn(new RentalInitResponse(
+                                true, "Réservation confirmée — acompte encaissé au comptoir.",
+                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                            ));
+                    });
+                    });
             }));
     }
 

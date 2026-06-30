@@ -13,6 +13,8 @@ import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
+import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
@@ -60,6 +62,7 @@ class RentalUseCaseImplTest {
     @Mock private PricingUseCase pricingService;
     @Mock private ScheduleUseCase scheduleService;
     @Mock private NotificationUseCase notificationService;
+    @Mock private RentalPaymentUseCase rentalPaymentUseCase;
     @Mock private AgencyMapper agencyMapper;
     @Mock private VehicleUseCase vehicleService;
     @Mock private DriverUseCase driverService;
@@ -230,7 +233,7 @@ class RentalUseCaseImplTest {
         LocalDateTime end = start.plusDays(1);
         AgencyRentalRequest request = new AgencyRentalRequest(
                 "Client Name", "690000000", "client@test.com", "CNI123",
-                vehicleId, driverId, start, end, RentalType.DAILY);
+                vehicleId, driverId, start, end, RentalType.DAILY, null, null);
         PricingEntity vehiclePrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(100)).build();
         PricingEntity driverPrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(50)).build();
 
@@ -239,7 +242,10 @@ class RentalUseCaseImplTest {
         when(pricingService.getPricing(ResourceType.DRIVER, driverId)).thenReturn(Mono.just(driverPrice));
         when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
         when(agencyMapper.toDto(agency)).thenReturn(mock(AgencyResponseDTO.class));
+        when(rentalRepository.countConflictingRentals(any(), any(), any())).thenReturn(Mono.just(0L));
         when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(rentalPaymentUseCase.processPayment(any(), any(PaymentRequest.class)))
+                .thenAnswer(inv -> Mono.just(RentalEntity.builder().id(UUID.randomUUID()).build()));
 
         StepVerifier.create(rentalUseCase.createAgencyRental(agencyId, request))
                 .expectNextMatches(RentalInitResponse::isAllowed)

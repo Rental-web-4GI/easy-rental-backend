@@ -5,6 +5,7 @@ import com.yowyob.easyrental.modules.vehicle.domain.port.in.CategoryUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.CategoryRequestDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.CategoryResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.domain.port.out.CategoryRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import com.yowyob.easyrental.shared.exception.ResourceNotFoundException;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class CategoryUseCaseImpl implements CategoryUseCase {
 
     private final CategoryRepositoryPort categoryRepository;
+    private final VehicleRepositoryPort vehicleRepository;
 
     @Override
     public Mono<CategoryResponseDTO> create(UUID orgId, CategoryRequestDTO request) {
@@ -63,7 +65,14 @@ public class CategoryUseCaseImpl implements CategoryUseCase {
                     if (cat.getOrganizationId() == null) {
                         return Mono.error(new ValidationException("Cannot delete system category"));
                     }
-                    return categoryRepository.deleteById(Objects.requireNonNull(id));
+                    return vehicleRepository.countByCategoryId(id)
+                            .flatMap(count -> {
+                                if (count != null && count > 0) {
+                                    return Mono.error(new ValidationException(
+                                            "CATEGORY_IN_USE: " + count + " vehicle(s) use this category"));
+                                }
+                                return categoryRepository.deleteById(Objects.requireNonNull(id));
+                            });
                 });
     }
 

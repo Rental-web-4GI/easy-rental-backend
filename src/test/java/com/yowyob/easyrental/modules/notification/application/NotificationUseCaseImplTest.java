@@ -38,7 +38,7 @@ class NotificationUseCaseImplTest {
 
     private NotificationResponseDTO sampleDto(UUID id) {
         return new NotificationResponseDTO(id, id, id, "CLIENT", "TEST", null, null,
-                LocalDateTime.now(), false, "details");
+                LocalDateTime.now(), false, false, "details");
     }
 
     @Test
@@ -87,7 +87,18 @@ class NotificationUseCaseImplTest {
         when(notificationRepository.findById(id)).thenReturn(Mono.just(entity));
         when(notificationRepository.save(any())).thenReturn(Mono.just(entity));
 
-        StepVerifier.create(notificationUseCase.markAsRead(id))
+        StepVerifier.create(notificationUseCase.markAsRead(id, "AGENCY"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldMarkAsReadForOrganizationContext() {
+        UUID id = UUID.randomUUID();
+        NotificationEntity entity = NotificationEntity.builder().id(id).isReadOrg(false).build();
+        when(notificationRepository.findById(id)).thenReturn(Mono.just(entity));
+        when(notificationRepository.save(any())).thenReturn(Mono.just(entity));
+
+        StepVerifier.create(notificationUseCase.markAsRead(id, "ORGANIZATION"))
                 .verifyComplete();
     }
 

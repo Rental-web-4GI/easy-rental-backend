@@ -37,6 +37,9 @@ public class UserEntity implements Persistable<UUID> {
     private String status;
     private LocalDateTime hiredAt;
 
+    private UUID kernelUserId;
+    private UUID kernelActorId;
+
     // Champ technique pour indiquer à R2DBC si c'est un INSERT ou UPDATE
     @Transient
     @Builder.Default

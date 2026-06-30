@@ -17,13 +17,14 @@ public class NotificationMapper {
                 entity.getVehicleId(),
                 entity.getDriverId(),
                 entity.getCreatedAt(),
-                entity.getIsRead(),
+                Boolean.TRUE.equals(entity.getIsRead()),
+                Boolean.TRUE.equals(entity.getIsReadOrg()),
                 entity.getDetails()
         );
     }
 
-    public NotificationEntity toEntity(String resourceType, String reason, 
-                                       java.util.UUID locationId, java.util.UUID resourceId, 
+    public NotificationEntity toEntity(String resourceType, String reason,
+                                       java.util.UUID locationId, java.util.UUID resourceId,
                                        java.util.UUID vehicleId, java.util.UUID driverId,
                                        String details) {
         return NotificationEntity.builder()
@@ -36,6 +37,7 @@ public class NotificationMapper {
                 .driverId(driverId)
                 .createdAt(java.time.LocalDateTime.now())
                 .isRead(false)
+                .isReadOrg(false)
                 .details(details)
                 .isNewRecord(true)
                 .build();

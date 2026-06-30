@@ -79,6 +79,8 @@ public class AgencyEntity implements Persistable<UUID> {
     @Builder.Default
     private Double monthlyRevenue = 0.0;
 
+    private UUID kernelAgencyId;
+
     @Transient
     @Builder.Default
     @JsonIgnore

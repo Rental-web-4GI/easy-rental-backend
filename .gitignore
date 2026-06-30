@@ -34,6 +34,13 @@ build/
 
 ### environment files ###
 .env
+kernel-core.credentials.env
+.kernel-mfa-session
+.kernel-access-token
+.kernel-bootstrap-org-id
+.kernel-e2e-spring.log
+.env.kernel
+.env.kernel.*
 
 projet_complet.txt
 

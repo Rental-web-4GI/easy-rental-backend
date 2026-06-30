@@ -36,7 +36,7 @@ class PricingUseCaseImplTest {
 
         StepVerifier.create(pricingUseCase.setPricing(
                         orgId, ResourceType.VEHICLE, resourceId,
-                        BigDecimal.valueOf(5000), BigDecimal.valueOf(50000)))
+                        BigDecimal.valueOf(5000), BigDecimal.valueOf(50000), null))
                 .expectNextMatches(p -> p.getPricePerHour().equals(BigDecimal.valueOf(5000)))
                 .verifyComplete();
     }

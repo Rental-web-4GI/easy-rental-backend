@@ -1,5 +1,7 @@
 package com.yowyob.easyrental.modules.media.application;
 
+import com.yowyob.easyrental.kernel.domain.KernelAuthClaims;
+import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
 import com.yowyob.easyrental.modules.media.domain.port.out.MediaRepositoryPort;
@@ -10,6 +12,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.codec.multipart.FilePart;
+import com.yowyob.easyrental.modules.auth.domain.UserEntity;
+import com.yowyob.easyrental.shared.exception.UnauthorizedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -48,9 +53,7 @@ public class MediaUseCaseImpl implements MediaUseCase {
     }
 
     public Mono<MediaEntity> uploadFile(FilePart filePart) {
-        return ReactiveSecurityContextHolder.getContext()
-                .map(ctx -> ctx.getAuthentication().getName()) // Récupère l'email
-                .flatMap(email -> userRepository.findByEmail(email))
+        return resolveCurrentUser()
                 .flatMap(user -> {
                     // Logique de nommage
                     Mono<String> prefixMono;
@@ -80,6 +83,37 @@ public class MediaUseCaseImpl implements MediaUseCase {
                                 .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()));
                     });
                 });
+    }
+
+    private Mono<UserEntity> resolveCurrentUser() {
+        return ReactiveSecurityContextHolder.getContext()
+                .map(ctx -> ctx.getAuthentication())
+                .flatMap(this::findUserFromAuthentication)
+                .switchIfEmpty(Mono.error(new UnauthorizedException("Authenticated user not found for media upload")));
+    }
+
+    private Mono<UserEntity> findUserFromAuthentication(Authentication auth) {
+        if (auth instanceof KernelAuthenticationToken kernelAuth) {
+            KernelAuthClaims claims = kernelAuth.getClaims();
+            String principal = claims.principal();
+            if (principal != null && principal.contains("@")) {
+                return userRepository.findByEmail(principal)
+                        .switchIfEmpty(findUserByKernelSubject(claims));
+            }
+            return findUserByKernelSubject(claims);
+        }
+        return userRepository.findByEmail(auth.getName());
+    }
+
+    private Mono<UserEntity> findUserByKernelSubject(KernelAuthClaims claims) {
+        if (claims.subject() == null) {
+            return Mono.empty();
+        }
+        try {
+            return userRepository.findByKernelUserId(UUID.fromString(claims.subject()));
+        } catch (IllegalArgumentException ex) {
+            return Mono.empty();
+        }
     }
 
     private Mono<MediaEntity> saveMediaEntity(FilePart filePart, String filename, String url, UUID uploaderId) {
