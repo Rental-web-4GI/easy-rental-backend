@@ -21,4 +21,18 @@ public interface AgencyRepository extends R2dbcRepository<AgencyEntity, UUID> {
            "(:keyword::text IS NULL OR name ILIKE '%' || :keyword || '%' OR address ILIKE '%' || :keyword || '%') " +
            "AND (:city::text IS NULL OR city ILIKE '%' || :city || '%')")
     Flux<AgencyEntity> searchAgencies(String keyword, String city);
+
+    /** Catalogue client : agences partenaires avec abonnement valide et réservation en ligne. */
+    @Query("""
+            SELECT a.* FROM agencies a
+            INNER JOIN organizations o ON o.id = a.organization_id
+            WHERE COALESCE(a.allow_online_booking, true) = true
+              AND (o.subscription_expires_at IS NULL OR o.subscription_expires_at > NOW())
+              AND LENGTH(TRIM(COALESCE(a.name, ''))) >= 3
+              AND (
+                LENGTH(TRIM(COALESCE(a.city, ''))) >= 2
+                OR LENGTH(TRIM(COALESCE(a.address, ''))) >= 5
+              )
+            """)
+    Flux<AgencyEntity> findCatalogAgencies();
 }

@@ -28,6 +28,8 @@ public class ReviewEntity implements Persistable<UUID> {
     private Integer rating;
     private String comment;
     private String authorName;
+    private String authorRole;
+    private Boolean published;
     private LocalDateTime createdAt;
 
     @Transient

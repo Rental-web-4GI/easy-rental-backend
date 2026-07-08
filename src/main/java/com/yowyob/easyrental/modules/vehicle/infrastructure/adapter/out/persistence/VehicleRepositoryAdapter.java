@@ -74,4 +74,9 @@ public class VehicleRepositoryAdapter implements VehicleRepositoryPort {
     public Flux<VehicleEntity> searchAvailableVehicles(UUID agencyId, UUID categoryId, String keyword) {
         return vehicleRepository.searchAvailableVehicles(agencyId, categoryId, keyword);
     }
+
+    @Override
+    public Flux<VehicleEntity> findCatalogAvailableVehicles() {
+        return vehicleRepository.findCatalogAvailableVehicles();
+    }
 }

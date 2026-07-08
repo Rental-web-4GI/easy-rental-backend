@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.rental.application;
 
+import com.yowyob.easyrental.modules.auth.domain.port.out.AuthUserPort;
 import com.yowyob.easyrental.modules.agency.mapper.AgencyMapper;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
@@ -59,6 +60,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final AgencyMapper agencyMapper;
     private final VehicleUseCase vehicleService;
     private final DriverUseCase driverService;
+    private final AuthUserPort authUserPort;
 
     // CORRECTION : PENDING est remis ici pour que le client puisse voir son "panier" et le payer
     private static final List<RentalStatus> RESERVATION_ACTIVE_STATUSES = Arrays.asList(
@@ -72,49 +74,49 @@ public class RentalUseCaseImpl implements RentalUseCase {
         return rentalRepository.findById(rentalId)
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental or reservation not found")))
             .flatMap(rental -> {
-                var vehicleMono = vehicleService.getVehicleById(rental.getVehicleId());
+                var vehicleMono = vehicleService.getVehicleById(rental.getVehicleId())
+                    .map(Optional::of)
+                    .defaultIfEmpty(Optional.empty());
                 var driverMono = rental.getDriverId() != null
                     ? driverService.getDriverById(rental.getDriverId())
                         .map(Optional::of).defaultIfEmpty(Optional.empty())
                     : Mono.just(Optional.<DriverResponseDTO>empty());
-                var agencyMono = agencyRepository.findById(rental.getAgencyId()).map(agencyMapper::toDto);
+                var agencyMono = agencyRepository.findById(rental.getAgencyId())
+                    .map(agencyMapper::toDto)
+                    .map(Optional::of)
+                    .defaultIfEmpty(Optional.empty());
 
                 return Mono.zip(vehicleMono, driverMono, agencyMono)
                     .map(tuple -> new RentalDetailResponseDTO(
-                            rental, tuple.getT1(), tuple.getT2().orElse(null), tuple.getT3()));
+                            rental,
+                            tuple.getT1().orElse(null),
+                            tuple.getT2().orElse(null),
+                            tuple.getT3().orElse(null)));
             });
     }
 
     @Transactional
     public Mono<RentalInitResponse> initiateRental(UUID clientId, RentalInitRequest request) {
-        return vehicleRepository.findById(request.vehicleId())
+        return authUserPort.findById(clientId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Client not found")))
+            .flatMap(client -> vehicleRepository.findById(request.vehicleId())
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Vehicle not found")))
             .flatMap(vehicle -> organizationRepository.findById(vehicle.getOrganizationId())
                 .flatMap(org -> {
                     boolean isDriverRequired = Boolean.TRUE.equals(org.getIsDriverBookingRequired());
                     boolean hasDriverSelected = request.driverId() != null;
+                    String clientLabel = RentalClientLabelResolver.resolveFromUser(client);
 
                     if (isDriverRequired && !hasDriverSelected) {
                         return Mono.error(new ValidationException(
                                 "Driver selection is required for this organization."));
                     }
 
-                    if (!isDriverRequired && !hasDriverSelected) {
-                        return agencyRepository.findById(vehicle.getAgencyId())
-                            .map(agency -> new RentalInitResponse(
-                                false,
-                                "Veuillez contacter l'agence pour une location sans chauffeur.",
-                                null,
-                                BigDecimal.ZERO,
-                                BigDecimal.ZERO,
-                                BigDecimal.ZERO,
-                                agencyMapper.toDto(agency)
-                            ));
-                    }
-
                     return Mono.zip(
                         pricingService.getPricing(ResourceType.VEHICLE, request.vehicleId()),
-                        pricingService.getPricing(ResourceType.DRIVER, request.driverId()),
+                        hasDriverSelected
+                            ? pricingService.getPricing(ResourceType.DRIVER, request.driverId())
+                            : Mono.just(new PricingEntity()),
                         agencyRepository.findById(vehicle.getAgencyId())
                     ).flatMap(tuple -> {
                         var vehiclePrice = tuple.getT1();
@@ -125,7 +127,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             request.startDate(), request.endDate(), request.rentalType());
 
                         BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
-                        BigDecimal dPrice = RentalDurationCalculator.unitPrice(driverPrice, request.rentalType());
+                        BigDecimal dPrice = hasDriverSelected
+                            ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
+                            : BigDecimal.ZERO;
 
                         BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
                         BigDecimal commission = baseAmount.multiply(RentalConstants.PLATFORM_COMMISSION_RATE);
@@ -144,6 +148,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 existingRental.setCommissionAmount(commission);
                                 existingRental.setDepositAmount(deposit);
                                 existingRental.setClientPhone(request.clientPhone());
+                                existingRental.setClientName(clientLabel);
+                                existingRental.setClientEmail(client.getEmail());
                                 existingRental.setUpdatedAt(LocalDateTime.now());
 
                                 return rentalRepository.save(existingRental);
@@ -153,6 +159,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 RentalEntity newRental = RentalEntity.builder()
                                     .id(UUID.randomUUID())
                                     .clientId(clientId)
+                                    .clientName(clientLabel)
+                                    .clientEmail(client.getEmail())
                                     .agencyId(vehicle.getAgencyId())
                                     .vehicleId(request.vehicleId())
                                     .driverId(request.driverId())
@@ -188,7 +196,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 NotificationTemplate.RESERVATION_INIT_AGENCY
                             ).thenReturn(response));
                     });
-                }));
+                })));
     }
 
     // Création directe par l'agence (Walk-in) avec les nouveaux champs

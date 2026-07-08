@@ -2,6 +2,7 @@ package com.yowyob.easyrental.modules.subscription.infrastructure.adapter.in.web
 
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
+import com.yowyob.easyrental.modules.subscription.dto.CreatePlanRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import jakarta.validation.Valid;
 import java.util.UUID;
 
 @RestController
@@ -32,6 +35,13 @@ public class SubscriptionController {
     @GetMapping("/plans")
     public Flux<SubscriptionPlanEntity> getAllPlans() {
         return subscriptionUseCase.getAllPlans();
+    }
+
+    @Operation(summary = "Créer un nouveau plan (Admin uniquement)")
+    @PostMapping("/plans")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<ResponseEntity<SubscriptionPlanEntity>> createPlan(@Valid @RequestBody CreatePlanRequest request) {
+        return subscriptionUseCase.createPlan(request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Mettre à jour les quotas d'un plan (Admin uniquement)")

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <!-- PRO 10 000/mois → annuel 8 000/mois équivalent (96 000/an) -->
+    <!-- ENTERPRISE 30 000/mois → annuel 24 000/mois équivalent (288 000/an) -->
+    <changeSet id="15-yearly-plan-pricing" author="easy-rental">
+        <update tableName="subscription_plans">
+            <column name="price" valueNumeric="96000.00"/>
+            <column name="description" value="Plan professionnel 1 an (8 000 XAF/mois)"/>
+            <where>name = 'PRO_YEARLY'</where>
+        </update>
+        <update tableName="subscription_plans">
+            <column name="price" valueNumeric="288000.00"/>
+            <column name="description" value="Accès illimité 1 an (24 000 XAF/mois)"/>
+            <where>name = 'ENTERPRISE_YEARLY'</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

@@ -18,6 +18,7 @@ export PATH="${JAVA_HOME}/bin:${PATH}"
 
 echo "Java: $(java -version 2>&1 | head -1)"
 echo "Kernel: ${KERNEL_INTEGRATION_ENABLED} → ${KERNEL_BASE_URL:-non configuré}"
+echo "Client auth: local PostgreSQL (easy-rental.client.skip-kernel-auth=true dans application-local.properties)"
 echo "Port: 8081 — arrêtez le conteneur docker backend s'il tourne (docker compose stop backend)"
 
 docker compose stop backend 2>/dev/null || docker-compose stop backend 2>/dev/null || true

@@ -54,4 +54,9 @@ public class AgencyRepositoryAdapter implements AgencyRepositoryPort {
     public Flux<AgencyEntity> searchAgencies(String keyword, String city) {
         return agencyRepository.searchAgencies(keyword, city);
     }
+
+    @Override
+    public Flux<AgencyEntity> findCatalogAgencies() {
+        return agencyRepository.findCatalogAgencies();
+    }
 }

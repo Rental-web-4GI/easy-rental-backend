@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.auth.application;
 
+import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
 import com.yowyob.easyrental.kernel.application.KernelSessionStore;
 import com.yowyob.easyrental.kernel.application.KernelUserMappingService;
@@ -13,6 +14,7 @@ import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
+import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
@@ -57,25 +59,49 @@ public class AuthUseCaseImpl implements AuthUseCase {
     private final KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
     private final KernelUserMappingService kernelUserMappingService;
     private final KernelSessionStore kernelSessionStore;
+    private final EasyRentalProperties easyRentalProperties;
 
     @Override
     public Mono<AuthResponse> login(LoginRequest request) {
         if (kernelProperties.isIntegrationEnabled()) {
-            return tryLocalStaffLogin(request).switchIfEmpty(kernelLogin(request));
+            return tryLocalAdminLogin(request)
+                    .switchIfEmpty(tryLocalStaffLogin(request))
+                    .switchIfEmpty(tryLocalClientLogin(request))
+                    .switchIfEmpty(kernelLogin(request));
         }
         return localLogin(request);
     }
 
+    private Mono<AuthResponse> tryLocalAdminLogin(LoginRequest request) {
+        return tryLocalRoleLogin(request, "ADMIN", "Admin logged in locally: ");
+    }
+
     private Mono<AuthResponse> tryLocalStaffLogin(LoginRequest request) {
-        return userRepository.findByEmail(request.email())
-                .filter(user -> "STAFF".equalsIgnoreCase(user.getRole()))
+        return tryLocalRoleLogin(request, "STAFF", "Staff logged in locally: ");
+    }
+
+    private Mono<AuthResponse> tryLocalClientLogin(LoginRequest request) {
+        if (!easyRentalProperties.getClient().isSkipKernelAuth()) {
+            return Mono.empty();
+        }
+        return tryLocalRoleLogin(request, "CLIENT", "Client logged in locally (skip-kernel-auth): ");
+    }
+
+    private Mono<AuthResponse> tryLocalRoleLogin(LoginRequest request, String role, String auditPrefix) {
+        String email = request.email() == null ? "" : request.email().trim().toLowerCase();
+        return userRepository.findByEmail(email)
+                .filter(user -> role.equalsIgnoreCase(user.getRole()))
                 .filter(user -> user.getPassword() != null)
                 .filter(user -> passwordEncoder.matches(request.password(), user.getPassword()))
                 .map(user -> {
-                    eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH",
-                            "Staff logged in locally: " + user.getEmail()));
+                    eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", auditPrefix + user.getEmail()));
                     return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
                 });
+    }
+
+    private boolean useKernelClientAuth() {
+        return kernelProperties.isIntegrationEnabled()
+                && !easyRentalProperties.getClient().isSkipKernelAuth();
     }
 
     @Override
@@ -107,7 +133,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
     }
 
     private Mono<AuthResponse> localLogin(LoginRequest request) {
-        return userRepository.findByEmail(request.email())
+        String email = request.email() == null ? "" : request.email().trim().toLowerCase();
+        return userRepository.findByEmail(email)
                 .filter(u -> u.getPassword() != null && passwordEncoder.matches(request.password(), u.getPassword()))
                 .map(u -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", "User logged in: " + u.getEmail()));
@@ -156,53 +183,135 @@ public class AuthUseCaseImpl implements AuthUseCase {
         return Mono.error(new RuntimeException("Invalid Token"));
     }
 
+    private static final String CLIENT_EMAIL_VERIFICATION_MESSAGE =
+            "Un email de verification a ete envoye. Verifiez votre boite mail avant de vous connecter.";
+    private static final String CLIENT_REGISTERED_MESSAGE = "Compte client cree avec succes.";
+
     @Override
     @Transactional
-    public Mono<UserEntity> registerClient(RegisterRequest request) {
-        if (kernelProperties.isIntegrationEnabled()) {
+    public Mono<RegisterClientResponse> registerClient(RegisterRequest request) {
+        if (useKernelClientAuth()) {
             return kernelRegisterClient(request);
         }
         return localRegisterClient(request);
     }
 
-    private Mono<UserEntity> kernelRegisterClient(RegisterRequest request) {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("tenantId", kernelProperties.getTenantId());
-        payload.put("firstName", request.firstname());
-        payload.put("lastName", request.lastname());
-        payload.put("username", request.email());
-        payload.put("email", request.email());
-        payload.put("password", request.password());
-        payload.put("accountType", "BUSINESS");
+    private Mono<RegisterClientResponse> kernelRegisterClient(RegisterRequest request) {
+        return userRepository.findByEmail(request.email())
+                .flatMap(this::handleExistingClientOnKernelRegister)
+                .switchIfEmpty(Mono.defer(() -> {
+                    Map<String, Object> payload = new HashMap<>();
+                    payload.put("tenantId", kernelProperties.getTenantId());
+                    payload.put("firstName", request.firstname());
+                    payload.put("lastName", request.lastname());
+                    payload.put("username", request.email());
+                    payload.put("email", request.email());
+                    payload.put("password", request.password());
+                    payload.put("accountType", "BUSINESS");
 
-        return kernelAuthAdapter.signUp(payload)
-                .flatMap(data -> {
-                    String token = data.path("accessToken").asText(null);
-                    if (token == null) {
-                        return Mono.error(new RuntimeException("Kernel sign-up did not return accessToken"));
-                    }
-                    return kernelUserMappingService.syncFromAccessToken(token);
-                });
+                    return kernelAuthAdapter.signUp(payload)
+                            .flatMap(signUpData -> {
+                                String status = signUpData.path("status").asText(null);
+                                UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));
+
+                                if ("EMAIL_VERIFICATION_REQUIRED".equals(status)) {
+                                    return savePendingKernelClient(request, kernelUserId)
+                                            .map(user -> new RegisterClientResponse(
+                                                    user,
+                                                    true,
+                                                    CLIENT_EMAIL_VERIFICATION_MESSAGE));
+                                }
+
+                                String token = signUpData.path("accessToken").asText(null);
+                                if (token == null) {
+                                    return Mono.error(new ValidationException(
+                                            "KERNEL_SIGNUP_INCOMPLETE: Kernel sign-up did not return "
+                                                    + "an access token."));
+                                }
+                                return kernelUserMappingService.syncFromAccessToken(token)
+                                        .flatMap(user -> applyClientProfile(user, request, kernelUserId))
+                                        .map(user -> new RegisterClientResponse(
+                                                user,
+                                                false,
+                                                CLIENT_REGISTERED_MESSAGE));
+                            });
+                }));
     }
 
-    private Mono<UserEntity> localRegisterClient(RegisterRequest request) {
+    private Mono<UserEntity> savePendingKernelClient(RegisterRequest request, UUID kernelUserId) {
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .firstname(request.firstname())
+                .lastname(request.lastname())
+                .fullname(request.firstname() + " " + request.lastname())
+                .email(request.email())
+                .role("CLIENT")
+                .kernelUserId(kernelUserId)
+                .isNewRecord(true)
+                .build();
+        return userRepository.save(Objects.requireNonNull(user))
+                .doOnSuccess(saved -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
+                        "New client pending email verification: " + saved.getEmail())));
+    }
+
+    private Mono<UserEntity> applyClientProfile(UserEntity user, RegisterRequest request, UUID kernelUserId) {
+        user.setFirstname(request.firstname());
+        user.setLastname(request.lastname());
+        user.setFullname(request.firstname() + " " + request.lastname());
+        user.setRole("CLIENT");
+        if (kernelUserId != null) {
+            user.setKernelUserId(kernelUserId);
+        }
+        return userRepository.save(user)
+                .doOnSuccess(saved -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
+                        "New client: " + saved.getEmail())));
+    }
+
+    private Mono<RegisterClientResponse> handleExistingClientOnKernelRegister(UserEntity existing) {
+        if ("CLIENT".equalsIgnoreCase(existing.getRole()) && existing.getPassword() == null) {
+            return Mono.just(new RegisterClientResponse(
+                    existing,
+                    true,
+                    CLIENT_EMAIL_VERIFICATION_MESSAGE));
+        }
+        return Mono.error(new ValidationException("Email already exists"));
+    }
+
+    private Mono<RegisterClientResponse> localRegisterClient(RegisterRequest request) {
         return userRepository.findByEmail(request.email())
-                .flatMap(existing -> Mono.<UserEntity>error(new RuntimeException("Email already exists")))
-                .switchIfEmpty(Mono.defer(() -> {
-                    UserEntity user = UserEntity.builder()
-                            .id(UUID.randomUUID())
-                            .firstname(request.firstname())
-                            .lastname(request.lastname())
-                            .fullname(request.firstname() + " " + request.lastname())
-                            .email(request.email())
-                            .password(passwordEncoder.encode(request.password()))
-                            .role("CLIENT")
-                            .isNewRecord(true)
-                            .build();
-                    return userRepository.save(Objects.requireNonNull(user))
-                            .doOnSuccess(u -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
-                                    "New client: " + u.getEmail())));
-                }));
+                .flatMap(existing -> upgradeLocalClientAccount(existing, request))
+                .switchIfEmpty(Mono.defer(() -> createLocalClient(request)));
+    }
+
+    private Mono<RegisterClientResponse> upgradeLocalClientAccount(UserEntity existing, RegisterRequest request) {
+        if (!"CLIENT".equalsIgnoreCase(existing.getRole()) || existing.getPassword() != null) {
+            return Mono.error(new ValidationException("Email already exists"));
+        }
+        existing.setFirstname(request.firstname());
+        existing.setLastname(request.lastname());
+        existing.setFullname(request.firstname() + " " + request.lastname());
+        existing.setPassword(passwordEncoder.encode(request.password()));
+        return userRepository.save(existing)
+                .doOnSuccess(u -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
+                        "Client account upgraded locally: " + u.getEmail())))
+                .map(u -> new RegisterClientResponse(u, false, CLIENT_REGISTERED_MESSAGE));
+    }
+
+    private Mono<RegisterClientResponse> createLocalClient(RegisterRequest request) {
+        UserEntity user = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .firstname(request.firstname())
+                .lastname(request.lastname())
+                .fullname(request.firstname() + " " + request.lastname())
+                .email(request.email())
+                .password(passwordEncoder.encode(request.password()))
+                .role("CLIENT")
+                .isNewRecord(true)
+                .build();
+        return userRepository.save(Objects.requireNonNull(user))
+                .doOnSuccess(u -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
+                        "New client: " + u.getEmail())))
+                .map(u -> new RegisterClientResponse(u, false, CLIENT_REGISTERED_MESSAGE));
     }
 
     @Override

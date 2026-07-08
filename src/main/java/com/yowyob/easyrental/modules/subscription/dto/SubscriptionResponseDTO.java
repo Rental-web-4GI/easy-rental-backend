@@ -11,5 +11,14 @@ public record SubscriptionResponseDTO(
     Integer maxVehicles,
     Integer maxAgencies,
     LocalDateTime expiresAt,
-    Boolean isExpired
+    Boolean isExpired,
+    Boolean autoRenew,
+    Long daysRemaining,
+    Boolean renewalDueSoon,
+    Boolean overQuotaAgencies,
+    Boolean overQuotaVehicles,
+    Boolean overQuotaDrivers,
+    Boolean overQuotaUsers,
+    BigDecimal monthlyEquivalentPrice,
+    String billingPeriod
 ) {}

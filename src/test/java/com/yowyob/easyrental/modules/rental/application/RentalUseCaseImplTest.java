@@ -1,5 +1,7 @@
 package com.yowyob.easyrental.modules.rental.application;
 
+import com.yowyob.easyrental.modules.auth.domain.UserEntity;
+import com.yowyob.easyrental.modules.auth.domain.port.out.AuthUserPort;
 import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.agency.dto.AgencyResponseDTO;
@@ -66,6 +68,7 @@ class RentalUseCaseImplTest {
     @Mock private AgencyMapper agencyMapper;
     @Mock private VehicleUseCase vehicleService;
     @Mock private DriverUseCase driverService;
+    @Mock private AuthUserPort authUserPort;
     @InjectMocks private RentalUseCaseImpl rentalUseCase;
 
     private UUID vehicleId;
@@ -108,6 +111,20 @@ class RentalUseCaseImplTest {
 
         StepVerifier.create(rentalUseCase.getRentalDetails(rentalId))
                 .expectNextMatches(RentalDetailResponseDTO.class::isInstance)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldGetRentalDetailsWhenVehicleMissing() {
+        UUID rentalId = UUID.randomUUID();
+        RentalEntity rental = RentalEntity.builder().id(rentalId).vehicleId(vehicleId).agencyId(agencyId).build();
+        when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(rental));
+        when(vehicleService.getVehicleById(vehicleId)).thenReturn(Mono.empty());
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
+        when(agencyMapper.toDto(agency)).thenReturn(mock(AgencyResponseDTO.class));
+
+        StepVerifier.create(rentalUseCase.getRentalDetails(rentalId))
+                .expectNextMatches(dto -> dto.rental().getId().equals(rentalId) && dto.vehicle() == null)
                 .verifyComplete();
     }
 
@@ -210,7 +227,13 @@ class RentalUseCaseImplTest {
                 vehicleId, driverId, start, end, RentalType.DAILY, "690000000");
         PricingEntity vehiclePrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(100)).build();
         PricingEntity driverPrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(50)).build();
+        UserEntity client = UserEntity.builder()
+                .id(clientId)
+                .fullname("Franck Client")
+                .email("franck@gmail.com")
+                .build();
 
+        when(authUserPort.findById(clientId)).thenReturn(Mono.just(client));
         when(vehicleRepository.findById(vehicleId)).thenReturn(Mono.just(vehicle));
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(
                 OrganizationEntity.builder().id(orgId).isDriverBookingRequired(true).build()));

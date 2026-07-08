@@ -13,7 +13,19 @@ public interface ReviewRepositoryPort {
 
     Mono<ReviewEntity> save(ReviewEntity review);
 
+    Mono<ReviewEntity> findById(UUID id);
+
     Flux<ReviewEntity> findAllByResourceTypeAndResourceId(ResourceType resourceType, UUID resourceId);
 
     Mono<Double> getAverageRating(ResourceType resourceType, UUID resourceId);
+
+    Flux<ReviewEntity> findPublishedLatest(int limit);
+
+    Flux<ReviewEntity> findAllOrderedByCreatedAtDesc();
+
+    Mono<Double> getPublishedAverageRating();
+
+    Mono<Long> countPublished();
+
+    Mono<Long> countUnpublished();
 }

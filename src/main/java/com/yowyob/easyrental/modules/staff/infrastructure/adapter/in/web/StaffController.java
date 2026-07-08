@@ -38,7 +38,7 @@ public class StaffController {
 
     @Operation(summary = "Ajouter un membre au staff d'une organisation")
     @PostMapping("/org/{orgId}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create', authentication)")
     public Mono<ResponseEntity<StaffResponseDTO>> create(@PathVariable UUID orgId,
             @RequestBody StaffRequestDTO request) {
         return staffUseCase.addStaffToOrganization(orgId, request).map(ResponseEntity::ok);
@@ -46,7 +46,7 @@ public class StaffController {
 
     @Operation(summary = "Provisionner un agent (compte kernel + invitation + email)")
     @PostMapping("/org/{orgId}/invite")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create', authentication)")
     public Mono<ResponseEntity<StaffInviteResponseDTO>> invite(@PathVariable UUID orgId,
             @Valid @RequestBody StaffInviteRequestDTO request) {
         return staffUseCase.provisionStaffToOrganization(orgId, request).map(ResponseEntity::ok);
@@ -54,28 +54,30 @@ public class StaffController {
 
     @Operation(summary = "Lister les rôles kernel disponibles pour invitation staff")
     @GetMapping("/org/{orgId}/kernel-roles")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:create', authentication)")
     public Flux<KernelRoleResponseDTO> listKernelRoles(@PathVariable UUID orgId) {
         return staffUseCase.listKernelRoles(orgId);
     }
 
     @Operation(summary = "Lister tout le staff d'une organisation")
     @GetMapping("/org/{orgId}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:list') or hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:list', authentication) "
+            + "or hasRole('ADMIN')")
     public Flux<StaffResponseDTO> getByOrg(@PathVariable UUID orgId) {
         return staffUseCase.getStaffByOrganization(orgId);
     }
 
     @Operation(summary = "Lister le staff d'une agence")
     @GetMapping("/agency/{agencyId}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:list') or hasRole('STAFF')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:list', authentication) "
+            + "or hasRole('STAFF')")
     public Flux<StaffResponseDTO> getByAgency(@PathVariable UUID agencyId) {
         return staffUseCase.getStaffByAgency(agencyId);
     }
 
     @Operation(summary = "Obtenir les détails d'un membre du staff")
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:update', authentication)")
     public Mono<ResponseEntity<StaffResponseDTO>> getById(@PathVariable UUID id) {
         return staffUseCase.getStaffById(id).map(ResponseEntity::ok);
     }
@@ -84,7 +86,7 @@ public class StaffController {
 
     @Operation(summary = "Modifier les informations d'un membre du personnel")
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.canAccessStaffMember(#id, 'staff:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.checkStaffAccess(#id, 'staff:update', authentication)")
     public Mono<ResponseEntity<StaffResponseDTO>> update(
             @PathVariable UUID id,
             @RequestBody StaffUpdateDTO request) {
@@ -94,7 +96,7 @@ public class StaffController {
 
     @Operation(summary = "Supprimer (désactiver) un membre du staff")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:delete')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'staff:delete', authentication)")
     public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
         return staffUseCase.deleteStaff(id).then(Mono.just(ResponseEntity.noContent().build()));
     }

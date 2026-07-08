@@ -292,7 +292,7 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
     }
 
     public Flux<VehicleResponseDTO> getAvailableVehicles() {
-        return vehicleRepository.findAllByStatut("AVAILABLE").flatMap(this::enrichVehicle);
+        return vehicleRepository.findCatalogAvailableVehicles().flatMap(this::enrichVehicle);
     }
 
     // NOUVEAU : Service de recherche de véhicules disponibles

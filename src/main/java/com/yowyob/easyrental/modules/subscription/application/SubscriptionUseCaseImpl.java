@@ -2,8 +2,11 @@ package com.yowyob.easyrental.modules.subscription.application;
 
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionEntity;
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
+import com.yowyob.easyrental.modules.subscription.dto.CreatePlanRequest;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionRemainingTimeDTO;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.modules.subscription.mapper.SubscriptionMapper;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionRepositoryPort;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -45,7 +49,7 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
                                                         // 1. Mise à jour de l'état de l'organisation
                                                         org.setSubscriptionPlanId(plan.getId());
                                                         org.setSubscriptionExpiresAt(null);
-                                                        org.setSubscriptionAutoRenew(true);
+                                                        org.setSubscriptionAutoRenew(false);
 
                                                         // 2. Création de l'enregistrement historique
                                                         SubscriptionEntity subRecord = SubscriptionEntity.builder()
@@ -69,41 +73,124 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
         }
 
         @Transactional
-        public Mono<SubscriptionPlanEntity> upgradePlan(UUID organizationId, String planName) {
+        public Mono<SubscriptionPlanEntity> upgradePlan(
+                        UUID organizationId,
+                        String planName,
+                        PaymentMethod paymentMethod) {
                 return planRepository.findByName(planName)
-                                .flatMap(plan -> organizationRepository.findById(Objects.requireNonNull(organizationId))
-                                                .flatMap(org -> paymentService.processPayment(
-                                                                org.getEmail(), planName,
-                                                                plan.getPrice().doubleValue())
+                                .switchIfEmpty(Mono.error(
+                                                new ValidationException("Unknown subscription plan: " + planName)))
+                                .flatMap(plan -> organizationRepository.findById(
+                                                Objects.requireNonNull(organizationId))
+                                                .switchIfEmpty(Mono.error(new ValidationException(
+                                                        "Organization not found: " + organizationId)))
+                                                .flatMap(org -> {
+                                                        if ("FREE".equalsIgnoreCase(planName)) {
+                                                                return applyFreePlan(org, organizationId, plan);
+                                                        }
+                                                        return resolvePayment(
+                                                                        org.getEmail(), planName, plan,
+                                                                        paymentMethod)
                                                                 .flatMap(success -> {
-                                                                        // --- LOGIQUE DE TEST : 2 MINUTES AU LIEU DE 30
-                                                                        // JOURS ---
-                                                                        // LocalDateTime testExpiry =
-                                                                        // LocalDateTime.now().plusMinutes(2);
-                                                                        org.setSubscriptionPlanId(plan.getId());
-                                                                        // org.setSubscriptionExpiresAt(testExpiry);
-                                                                        org.setSubscriptionExpiresAt(
+                                                                        if (!Boolean.TRUE.equals(success)) {
+                                                                                String paymentError =
+                                                                                        "Payment failed for plan: "
+                                                                                                + planName;
+                                                                                return Mono.error(
+                                                                                        new ValidationException(
+                                                                                                paymentError));
+                                                                        }
+                                                                        return applyPaidPlan(
+                                                                                org, organizationId, plan);
+                                                                });
+                                                }));
+        }
+
+        private Mono<SubscriptionPlanEntity> applyPaidPlan(
+                        OrganizationEntity org,
+                        UUID organizationId,
+                        SubscriptionPlanEntity plan) {
+                org.setSubscriptionPlanId(plan.getId());
+                org.setSubscriptionAutoRenew(false);
+                Integer durationDays = plan.getDurationDays();
+                if (durationDays == null || durationDays <= 0) {
+                        org.setSubscriptionExpiresAt(null);
+                } else {
+                        org.setSubscriptionExpiresAt(LocalDateTime.now().plusDays(durationDays));
+                }
+
+                SubscriptionEntity subRecord = SubscriptionEntity.builder()
+                                .id(UUID.randomUUID())
+                                .organizationId(organizationId)
+                                .planType(plan.getName())
+                                .status("ACTIVE")
+                                .startDate(LocalDateTime.now())
+                                .endDate(org.getSubscriptionExpiresAt())
+                                .isNewRecord(true)
+                                .build();
+
+                return organizationRepository.save(org)
+                                .then(subscriptionRepository.save(Objects.requireNonNull(subRecord)))
+                                .thenReturn(plan);
+        }
+
+        private Mono<SubscriptionPlanEntity> applyFreePlan(
+                        OrganizationEntity org,
+                        UUID organizationId,
+                        SubscriptionPlanEntity freePlan) {
+                org.setSubscriptionPlanId(freePlan.getId());
+                org.setSubscriptionExpiresAt(null);
+                org.setSubscriptionAutoRenew(false);
+
+                SubscriptionEntity subRecord = SubscriptionEntity.builder()
+                                .id(UUID.randomUUID())
+                                .organizationId(organizationId)
+                                .planType(freePlan.getName())
+                                .status("MANUAL_DOWNGRADE")
+                                .startDate(LocalDateTime.now())
+                                .isNewRecord(true)
+                                .build();
+
+                return organizationRepository.save(org)
+                                .then(subscriptionRepository.save(Objects.requireNonNull(subRecord)))
+                                .thenReturn(freePlan);
+        }
+
+        @Transactional
+        public Mono<SubscriptionPlanEntity> adminAssignPlan(UUID organizationId, String planName) {
+                return planRepository.findByName(planName)
+                                .switchIfEmpty(Mono.error(
+                                                new ValidationException("Unknown subscription plan: " + planName)))
+                                .flatMap(plan -> organizationRepository.findById(
+                                                Objects.requireNonNull(organizationId))
+                                                .flatMap(org -> {
+                                                        org.setSubscriptionPlanId(plan.getId());
+                                                        Integer durationDays = plan.getDurationDays();
+                                                        if (durationDays != null && durationDays > 0) {
+                                                                org.setSubscriptionExpiresAt(
                                                                                 LocalDateTime.now().plusDays(
-                                                                                        plan.getDurationDays()));
+                                                                                                durationDays));
+                                                        } else {
+                                                                org.setSubscriptionExpiresAt(null);
+                                                        }
+                                                        org.setSubscriptionAutoRenew(false);
 
-                                                                        SubscriptionEntity subRecord =
-                                                                                SubscriptionEntity.builder()
-                                                                                .id(UUID.randomUUID())
-                                                                                .organizationId(organizationId)
-                                                                                .planType(plan.getName())
-                                                                                .status("ACTIVE")
-                                                                                .startDate(LocalDateTime.now())
-                                                                                .endDate(
-                                                                                        org.getSubscriptionExpiresAt())
-                                                                                .isNewRecord(true)
-                                                                                .build();
+                                                        SubscriptionEntity subRecord = SubscriptionEntity.builder()
+                                                                        .id(UUID.randomUUID())
+                                                                        .organizationId(organizationId)
+                                                                        .planType(plan.getName())
+                                                                        .status("ADMIN_ASSIGNED")
+                                                                        .startDate(LocalDateTime.now())
+                                                                        .endDate(org.getSubscriptionExpiresAt())
+                                                                        .isNewRecord(true)
+                                                                        .build();
 
-                                                                        return organizationRepository.save(org)
-                                                                                .then(subscriptionRepository.save(
+                                                        return organizationRepository.save(org)
+                                                                        .then(subscriptionRepository.save(
                                                                                         Objects.requireNonNull(
-                                                                                                subRecord)))
-                                                                                .thenReturn(plan);
-                                                                })));
+                                                                                                        subRecord)))
+                                                                        .thenReturn(plan);
+                                                }));
         }
 
         @Transactional
@@ -112,8 +199,9 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
                                 && org.getSubscriptionExpiresAt().isBefore(LocalDateTime.now())) {
                         return planRepository.findByName("FREE")
                                         .flatMap(freePlan -> {
-                                                org.setSubscriptionPlanId(freePlan.getId());
-                                                org.setSubscriptionExpiresAt(null);
+                                                        org.setSubscriptionPlanId(freePlan.getId());
+                                                        org.setSubscriptionExpiresAt(null);
+                                                        org.setSubscriptionAutoRenew(false);
 
                                                 SubscriptionEntity history = SubscriptionEntity.builder()
                                                                 .id(UUID.randomUUID())
@@ -198,10 +286,84 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
         public Mono<SubscriptionPlanEntity> updatePlan(UUID id, SubscriptionPlanEntity planUpdate) {
                 return planRepository.findById(Objects.requireNonNull(id, "Plan id is required"))
                                 .flatMap(existingPlan -> {
-                                        planUpdate.setId(existingPlan.getId());
-                                        return planRepository.save(Objects.requireNonNull(planUpdate));
+                                        mergePlanFields(existingPlan, planUpdate);
+                                        return planRepository.save(existingPlan);
                                 })
                                 .switchIfEmpty(Mono.error(new RuntimeException("Plan not found")));
+        }
+
+        @Override
+        @Transactional
+        public Mono<SubscriptionPlanEntity> createPlan(CreatePlanRequest request) {
+                return planRepository.findByName(request.name())
+                                .flatMap(existing -> Mono.<SubscriptionPlanEntity>error(
+                                                new ValidationException("Plan name already exists: " + request.name())))
+                                .switchIfEmpty(Mono.defer(() -> {
+                                        SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder()
+                                                        .id(UUID.randomUUID())
+                                                        .name(request.name())
+                                                        .description(request.description())
+                                                        .price(request.price())
+                                                        .durationDays(request.durationDays())
+                                                        .maxVehicles(defaultQuota(request.maxVehicles()))
+                                                        .maxDrivers(defaultQuota(request.maxDrivers()))
+                                                        .maxAgencies(defaultQuota(request.maxAgencies()))
+                                                        .maxUsers(defaultQuota(request.maxUsers()))
+                                                        .hasGeofencing(Boolean.TRUE.equals(request.hasGeofencing()))
+                                                        .hasChat(Boolean.TRUE.equals(request.hasChat()))
+                                                        .isNewRecord(true)
+                                                        .build();
+                                        return planRepository.save(plan);
+                                }));
+        }
+
+        private Mono<Boolean> resolvePayment(
+                        String email,
+                        String planName,
+                        SubscriptionPlanEntity plan,
+                        PaymentMethod paymentMethod) {
+                BigDecimal price = plan.getPrice() != null ? plan.getPrice() : BigDecimal.ZERO;
+                if (price.compareTo(BigDecimal.ZERO) <= 0) {
+                        return Mono.just(true);
+                }
+                return paymentService.processPayment(email, planName, price.doubleValue(), paymentMethod);
+        }
+
+        private void mergePlanFields(SubscriptionPlanEntity existing, SubscriptionPlanEntity update) {
+                if (update.getName() != null) {
+                        existing.setName(update.getName());
+                }
+                if (update.getDescription() != null) {
+                        existing.setDescription(update.getDescription());
+                }
+                if (update.getPrice() != null) {
+                        existing.setPrice(update.getPrice());
+                }
+                if (update.getDurationDays() != null) {
+                        existing.setDurationDays(update.getDurationDays());
+                }
+                if (update.getMaxVehicles() != null) {
+                        existing.setMaxVehicles(update.getMaxVehicles());
+                }
+                if (update.getMaxDrivers() != null) {
+                        existing.setMaxDrivers(update.getMaxDrivers());
+                }
+                if (update.getMaxAgencies() != null) {
+                        existing.setMaxAgencies(update.getMaxAgencies());
+                }
+                if (update.getMaxUsers() != null) {
+                        existing.setMaxUsers(update.getMaxUsers());
+                }
+                if (update.getHasGeofencing() != null) {
+                        existing.setHasGeofencing(update.getHasGeofencing());
+                }
+                if (update.getHasChat() != null) {
+                        existing.setHasChat(update.getHasChat());
+                }
+        }
+
+        private int defaultQuota(Integer value) {
+                return value != null ? value : 0;
         }
 
         @Override
@@ -209,6 +371,13 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
                 return organizationRepository.findById(Objects.requireNonNull(orgId))
                                 .flatMap(this::checkAndDowngrade)
                                 .flatMap(this::buildSubscriptionResponse);
+        }
+
+        @Override
+        public Mono<Long> processExpiredSubscriptions() {
+                return organizationRepository.findAllExpiredBefore(LocalDateTime.now())
+                                .flatMap(this::checkAndDowngrade)
+                                .count();
         }
 
         @Override

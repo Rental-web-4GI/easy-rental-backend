@@ -74,7 +74,7 @@ public class CategoryController {
 
     @Operation(summary = "Mettre à jour une catégorie de véhicule")
     @PutMapping("/{id}")
-    @PreAuthorize("@rbac.canAccessCategory(#id, 'vehiclecategory:update')")
+    @PreAuthorize("@rbac.checkCategoryAccess(#id, 'vehiclecategory:update', authentication)")
     public Mono<ResponseEntity<CategoryResponseDTO>> update(
             @PathVariable UUID id,
             @RequestBody CategoryRequestDTO request) {

@@ -35,7 +35,13 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchanges -> exchanges
                         .pathMatchers("/auth/**", "/swagger-ui.html", "/webjars/**", "/v3/api-docs/**").permitAll()
+                        .pathMatchers(HttpMethod.POST, "/api/subscriptions/plans").hasRole("ADMIN")
                         .pathMatchers(HttpMethod.PUT, "/api/subscriptions/plans/**").hasRole("ADMIN")
+                        .pathMatchers(
+                            "/api/support/config",
+                            "/api/support/messages",
+                            "/api/support/threads/*/messages")
+                        .permitAll()
                         .pathMatchers(
                             "/api/vehicles/available",
                             "/api/vehicles/search",
@@ -49,11 +55,13 @@ public class SecurityConfig {
                             "/api/drivers/{id}/details",
                             "/api/vehicles/{id}/details",
                             "/api/vehicles/drivers/available",
-                            "/api/reviews/**",
+                            "/api/reviews/featured",
+                            "/api/reviews/platform-feedback",
+                            "/api/reviews/VEHICLE/*",
+                            "/api/reviews/DRIVER/*",
                             "/api/rentals/{id}/details",
                             "/api/rentals/init")
                         .permitAll()
-                        .pathMatchers("/api/org/**").hasRole("ORGANIZATION")
                         .anyExchange().authenticated()
                 )
                 .exceptionHandling(exceptionHandlingSpec -> exceptionHandlingSpec

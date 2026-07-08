@@ -5,6 +5,7 @@ import com.yowyob.easyrental.modules.organization.dto.OrgResponseDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUpdateDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUserResponseDTO;
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
+import com.yowyob.easyrental.modules.subscription.dto.AssignPlanRequest;
 import com.yowyob.easyrental.modules.subscription.dto.AutoRenewRequest;
 import com.yowyob.easyrental.modules.subscription.dto.PlanUpgradeRequest;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionRemainingTimeDTO;
@@ -42,12 +43,14 @@ public class OrganizationController {
 
     @Operation(summary = "Lister toutes les organisations (Admin)")
     @GetMapping("/all")
+    @PreAuthorize("hasRole('ADMIN')")
     public Flux<OrgResponseDTO> getAll() {
         return organizationUseCase.getAllOrganizations();
     }
 
     @Operation(summary = "Obtenir les détails d'une organisation")
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<OrgResponseDTO>> getOrganization(@PathVariable UUID id) {
         return organizationUseCase.getOrganization(id).map(ResponseEntity::ok);
     }
@@ -137,6 +140,16 @@ public class OrganizationController {
     public Mono<ResponseEntity<SubscriptionResponseDTO>> upgradePlan(
             @PathVariable UUID id,
             @RequestBody PlanUpgradeRequest request) {
-        return organizationUseCase.upgradePlanWithResponse(id, request.newPlan().name()).map(ResponseEntity::ok);
+        return organizationUseCase.upgradePlanWithResponse(id, request.newPlan(), request.paymentMethod())
+                .map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Assigner un plan sans paiement (Admin)")
+    @PutMapping("/{id}/subscription/assign")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<ResponseEntity<SubscriptionResponseDTO>> assignPlan(
+            @PathVariable UUID id,
+            @RequestBody AssignPlanRequest request) {
+        return organizationUseCase.adminAssignPlanWithResponse(id, request.planName()).map(ResponseEntity::ok);
     }
 }

@@ -5,6 +5,7 @@ import com.yowyob.easyrental.modules.driver.domain.port.in.DriverUseCase;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleRequestDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.domain.port.in.VehicleUseCase;
+import com.yowyob.easyrental.shared.security.AccessControlService;
 import com.yowyob.easyrental.modules.vehicle.dto.VehicleDetailResponseDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.PricingUpdateDTO;
 import com.yowyob.easyrental.modules.vehicle.dto.ScheduleUpdateDTO;
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -42,15 +44,20 @@ public class VehicleController {
 
     private final VehicleUseCase vehicleUseCase;
     private final DriverUseCase driverUseCase;
+    private final AccessControlService accessControlService;
 
     @Operation(summary = "Ajouter un véhicule à la flotte (Vérifie les quotas)")
     @NotNull
     @PostMapping("/org/{orgId}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'vehicle:create')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<VehicleResponseDTO>> create(
             @PathVariable UUID orgId,
             @RequestBody VehicleRequestDTO request) {
-        return vehicleUseCase.createVehicle(orgId, request).map(ResponseEntity::ok);
+        return ReactiveSecurityContextHolder.getContext()
+                .flatMap(ctx -> accessControlService.assertVehicleCreate(
+                        orgId, request.agencyId(), ctx.getAuthentication()))
+                .then(vehicleUseCase.createVehicle(orgId, request))
+                .map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Lister tous les véhicules d'une organisation")
@@ -108,7 +115,7 @@ public class VehicleController {
 
     @Operation(summary = "Mettre à jour le prix de location du véhicule")
     @PutMapping("/{id}/pricing")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updatePricing(
             @PathVariable UUID id,
             @RequestBody PricingUpdateDTO request) {
@@ -117,7 +124,7 @@ public class VehicleController {
 
     @Operation(summary = "Ajouter des indisponibilités (Planning) au véhicule")
     @PostMapping("/{id}/schedule")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<VehicleDetailResponseDTO>> updateSchedule(
             @PathVariable UUID id,
             @RequestBody ScheduleUpdateDTO request) {
@@ -132,7 +139,7 @@ public class VehicleController {
 
     @Operation(summary = "Mettre à jour les informations d'un véhicule")
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<VehicleResponseDTO>> update(
             @PathVariable UUID id,
             @RequestBody VehicleRequestDTO request) {
@@ -141,21 +148,21 @@ public class VehicleController {
 
     @Operation(summary = "Changer le statut du véhicule (MAINTENANCE, AVAILABLE, RENTED)")
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF') or @rbac.canAccessVehicle(#id, 'vehicle:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Mono<ResponseEntity<VehicleResponseDTO>> updateStatus(@PathVariable UUID id, @RequestParam String status) {
         return vehicleUseCase.updateVehicleStatus(id, status).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Supprimer un véhicule (Met à jour les compteurs)")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#orgId, 'vehicle:delete')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
      public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
         return vehicleUseCase.deleteVehicle(id).then(Mono.just(ResponseEntity.noContent().build()));
     }
 
     @Operation(summary = "Lister les véhicules d'une organisation filtrés par catégorie")
     @GetMapping("/org/{orgId}/category/{categoryId}")
-    @PreAuthorize("@rbac.hasPermission(#orgId, 'vehicle:list')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Flux<VehicleResponseDTO> getByOrgAndCategory(
             @PathVariable UUID orgId,
             @PathVariable UUID categoryId) {
@@ -164,7 +171,7 @@ public class VehicleController {
 
     @Operation(summary = "Lister les véhicules d'une agence filtrés par catégorie")
     @GetMapping("/agency/{agencyId}/category/{categoryId}")
-    @PreAuthorize("@rbac.canAccessAgency(#agencyId, 'vehicle:list')")
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
     public Flux<VehicleResponseDTO> getByAgencyAndCategory(
             @PathVariable UUID agencyId,
             @PathVariable UUID categoryId) {

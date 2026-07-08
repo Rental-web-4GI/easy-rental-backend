@@ -29,4 +29,21 @@ class KernelPermissionMapperTest {
         assertTrue(resolved.isPresent());
         assertEquals(orgId, resolved.get());
     }
+
+    @Test
+    void shouldMapScopedVehicleWriteToCreateTag() {
+        UUID orgId = UUID.fromString("232c3439-1f4c-40ca-9548-342fd75a981a");
+        KernelAuthClaims claims = new KernelAuthClaims(
+                UUID.randomUUID().toString(),
+                "staff@test.com",
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.of(UUID.randomUUID()),
+                List.of("rental:vehicle:write#ORGANIZATION:" + orgId),
+                List.of("AGENCY_STAFF"));
+
+        assertTrue(KernelPermissionMapper.hasKernelPermission(claims, "vehicle:create"));
+        assertEquals(List.of("vehicle:create"), KernelPermissionMapper.toFrontendTags(claims));
+    }
 }

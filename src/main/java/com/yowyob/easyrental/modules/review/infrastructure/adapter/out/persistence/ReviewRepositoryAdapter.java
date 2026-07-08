@@ -22,6 +22,11 @@ public class ReviewRepositoryAdapter implements ReviewRepositoryPort {
     }
 
     @Override
+    public Mono<ReviewEntity> findById(UUID id) {
+        return reviewRepository.findById(id);
+    }
+
+    @Override
     public Flux<ReviewEntity> findAllByResourceTypeAndResourceId(ResourceType resourceType, UUID resourceId) {
         return reviewRepository.findAllByResourceTypeAndResourceId(resourceType, resourceId);
     }
@@ -29,5 +34,30 @@ public class ReviewRepositoryAdapter implements ReviewRepositoryPort {
     @Override
     public Mono<Double> getAverageRating(ResourceType resourceType, UUID resourceId) {
         return reviewRepository.getAverageRating(resourceType, resourceId);
+    }
+
+    @Override
+    public Flux<ReviewEntity> findPublishedLatest(int limit) {
+        return reviewRepository.findPublishedLatest(limit);
+    }
+
+    @Override
+    public Flux<ReviewEntity> findAllOrderedByCreatedAtDesc() {
+        return reviewRepository.findAllOrderedByCreatedAtDesc();
+    }
+
+    @Override
+    public Mono<Double> getPublishedAverageRating() {
+        return reviewRepository.getPublishedAverageRating();
+    }
+
+    @Override
+    public Mono<Long> countPublished() {
+        return reviewRepository.countPublished();
+    }
+
+    @Override
+    public Mono<Long> countUnpublished() {
+        return reviewRepository.countUnpublished();
     }
 }

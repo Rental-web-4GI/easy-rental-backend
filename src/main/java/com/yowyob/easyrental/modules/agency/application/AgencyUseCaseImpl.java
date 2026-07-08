@@ -288,7 +288,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     }
 
     public Flux<AgencyResponseDTO> getAllAgencies() {
-        return agencyRepository.findAll().map(agencyMapper::toDto);
+        return agencyRepository.findCatalogAgencies().map(agencyMapper::toDto);
     }
 
     public Mono<AgencyResponseDTO> getAgency(UUID id) {

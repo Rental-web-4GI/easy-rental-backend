@@ -446,5 +446,8 @@
     <include file="db/changelog/changes/11-vehicle-kernel-resource-id.xml"/>
     <include file="db/changelog/changes/12-pricing-monthly-driver-dossier.xml"/>
     <include file="db/changelog/changes/13-notification-read-org.xml"/>
+    <include file="db/changelog/changes/14-support-messaging.xml"/>
+    <include file="db/changelog/changes/15-yearly-plan-pricing.xml"/>
+    <include file="db/changelog/changes/16-review-moderation.xml"/>
 
 </databaseChangeLog>

@@ -149,7 +149,7 @@ class AgencyUseCaseImplTest {
     @Test
     void shouldListAllAgencies() {
         AgencyEntity entity = AgencyEntity.builder().id(UUID.randomUUID()).name("All").build();
-        when(agencyRepository.findAll()).thenReturn(Flux.just(entity));
+        when(agencyRepository.findCatalogAgencies()).thenReturn(Flux.just(entity));
         when(agencyMapper.toDto(entity)).thenReturn(mock(AgencyResponseDTO.class));
 
         StepVerifier.create(agencyUseCase.getAllAgencies())

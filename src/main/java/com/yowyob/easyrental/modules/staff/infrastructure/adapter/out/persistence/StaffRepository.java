@@ -45,14 +45,17 @@ public interface StaffRepository extends R2dbcRepository<UserEntity, UUID> {
     Mono<UUID> findOrgIdByStaffId(UUID staffId);
 
     @Query("""
-                SELECT COUNT(*) > 0
-                FROM staff s
-                JOIN postes p ON s.poste_id = p.id
-                JOIN postes_permissions pp ON p.id = pp.poste_id
-                JOIN permissions perm ON pp.permission_id = perm.id
-                WHERE s.user_id = :id
-                AND s.organization_id = :orgId
-                AND perm.tag = :permissionTag
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM users u
+                    JOIN postes p ON u.poste_id = p.id
+                    JOIN postes_permissions pp ON p.id = pp.poste_id
+                    JOIN permissions perm ON pp.permission_id = perm.id
+                    WHERE u.id = :id
+                    AND u.organization_id = :orgId
+                    AND u.role = 'STAFF'
+                    AND perm.tag = :permissionTag
+                )
             """)
     Mono<Boolean> checkStaffPermission(UUID id, UUID orgId, String permissionTag);
 }

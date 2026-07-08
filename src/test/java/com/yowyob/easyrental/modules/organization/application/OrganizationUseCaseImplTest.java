@@ -22,9 +22,12 @@ import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.mockito.ArgumentMatchers.any;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import reactor.core.publisher.Flux;
@@ -107,6 +110,7 @@ class OrganizationUseCaseImplTest {
                 .id(orgId).subscriptionPlanId(planId).currentVehicles(1).build();
         SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder().id(planId).maxVehicles(5).build();
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(organization));
+        when(subscriptionUseCase.checkAndDowngrade(organization)).thenReturn(Mono.just(organization));
         when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
 
         StepVerifier.create(organizationUseCase.validateQuota(orgId, "VEHICLE"))
@@ -124,6 +128,7 @@ class OrganizationUseCaseImplTest {
         SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder()
                 .id(planId).maxAgencies(5).maxDrivers(5).maxUsers(5).build();
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(organization));
+        when(subscriptionUseCase.checkAndDowngrade(any(OrganizationEntity.class))).thenReturn(Mono.just(organization));
         when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
 
         StepVerifier.create(organizationUseCase.validateQuota(orgId, "AGENCY"))
@@ -335,7 +340,8 @@ class OrganizationUseCaseImplTest {
         UUID orgId = UUID.randomUUID();
         OrganizationEntity org = OrganizationEntity.builder().id(orgId).build();
         SubscriptionResponseDTO response = new SubscriptionResponseDTO(
-                "PRO", "Pro plan", BigDecimal.TEN, 30, 10, 5, null, true);
+                "PRO", "Pro plan", BigDecimal.TEN, 30, 10, 5, null, true, false,
+                15L, false, false, false, false, false, BigDecimal.TEN, "MONTHLY");
         when(subscriptionUseCase.toggleAutoRenew(orgId, true)).thenReturn(Mono.just(org));
         when(subscriptionUseCase.buildSubscriptionResponse(org)).thenReturn(Mono.just(response));
 
@@ -348,7 +354,8 @@ class OrganizationUseCaseImplTest {
     void shouldGetOrgSubscriptionStatus() {
         UUID orgId = UUID.randomUUID();
         SubscriptionResponseDTO response = new SubscriptionResponseDTO(
-                "FREE", "Free", BigDecimal.ZERO, 30, 10, 5, null, false);
+                "FREE", "Free", BigDecimal.ZERO, 30, 10, 5, null, false, false,
+                0L, false, false, false, false, false, BigDecimal.ZERO, "UNLIMITED");
         when(subscriptionUseCase.getOrgSubscriptionStatus(orgId)).thenReturn(Mono.just(response));
 
         StepVerifier.create(organizationUseCase.getOrgSubscriptionStatus(orgId))
@@ -362,12 +369,13 @@ class OrganizationUseCaseImplTest {
         OrganizationEntity org = OrganizationEntity.builder().id(orgId).build();
         SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder().id(UUID.randomUUID()).name("PRO").build();
         SubscriptionResponseDTO response = new SubscriptionResponseDTO(
-                "PRO", "Pro", BigDecimal.TEN, 30, 10, 5, null, false);
-        when(subscriptionUseCase.upgradePlan(orgId, "PRO")).thenReturn(Mono.just(plan));
+                "PRO", "Pro", BigDecimal.TEN, 30, 10, 5, null, false, false,
+                20L, false, false, false, false, false, BigDecimal.TEN, "MONTHLY");
+        when(subscriptionUseCase.upgradePlan(orgId, "PRO", PaymentMethod.MOMO)).thenReturn(Mono.just(plan));
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
         when(subscriptionUseCase.buildSubscriptionResponse(org)).thenReturn(Mono.just(response));
 
-        StepVerifier.create(organizationUseCase.upgradePlanWithResponse(orgId, "PRO"))
+        StepVerifier.create(organizationUseCase.upgradePlanWithResponse(orgId, "PRO", PaymentMethod.MOMO))
                 .expectNextMatches(r -> r.planName().equals("PRO"))
                 .verifyComplete();
     }

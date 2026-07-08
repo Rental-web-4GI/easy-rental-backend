@@ -25,4 +25,6 @@ public interface AgencyRepositoryPort {
     Mono<UUID> findOrgIdByAgencyId(UUID agencyId);
 
     Flux<AgencyEntity> searchAgencies(String keyword, String city);
+
+    Flux<AgencyEntity> findCatalogAgencies();
 }

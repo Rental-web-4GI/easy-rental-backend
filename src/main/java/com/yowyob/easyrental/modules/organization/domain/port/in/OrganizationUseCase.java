@@ -4,6 +4,7 @@ import com.yowyob.easyrental.modules.organization.dto.OrgResponseDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUpdateDTO;
 import com.yowyob.easyrental.modules.organization.dto.OrgUserResponseDTO;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import java.util.UUID;
 import org.springframework.http.codec.multipart.FilePart;
 import reactor.core.publisher.Flux;
@@ -30,7 +31,8 @@ public interface OrganizationUseCase {
     Flux<OrgResponseDTO> getOrganizationsByPlan(UUID planId);
     Mono<SubscriptionResponseDTO> toggleAutoRenewWithResponse(UUID orgId, boolean enabled);
     Mono<SubscriptionResponseDTO> getOrgSubscriptionStatus(UUID orgId);
-    Mono<SubscriptionResponseDTO> upgradePlanWithResponse(UUID orgId, String planName);
+    Mono<SubscriptionResponseDTO> upgradePlanWithResponse(UUID orgId, String planName, PaymentMethod paymentMethod);
+    Mono<SubscriptionResponseDTO> adminAssignPlanWithResponse(UUID orgId, String planName);
     Mono<Void> updateAgencyCounter(UUID orgId, int increment);
     Mono<Void> updateStaffCounter(UUID orgId, int increment);
     Mono<Void> updateVehicleCounter(UUID orgId, int increment);

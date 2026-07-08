@@ -8,6 +8,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Component
 @RequiredArgsConstructor
@@ -43,5 +44,10 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
     @Override
     public Mono<OrganizationEntity> findByKernelOrganizationId(UUID kernelOrganizationId) {
         return organizationRepository.findByKernelOrganizationId(kernelOrganizationId);
+    }
+
+    @Override
+    public Flux<OrganizationEntity> findAllExpiredBefore(LocalDateTime threshold) {
+        return organizationRepository.findAllExpiredBefore(threshold);
     }
 }

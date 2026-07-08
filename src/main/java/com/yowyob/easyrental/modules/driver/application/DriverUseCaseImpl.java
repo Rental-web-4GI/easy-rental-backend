@@ -47,7 +47,6 @@ public class DriverUseCaseImpl implements DriverUseCase {
     private final PricingUseCase pricingService;
     private final ReviewUseCase reviewService;
 
-    @Transactional
     public Mono<DriverResponseDTO> createDriver(
             UUID orgId,
             UUID agencyId,
@@ -62,49 +61,95 @@ public class DriverUseCaseImpl implements DriverUseCase {
                     return Mono.error(new RuntimeException("Quota de chauffeurs atteint pour votre plan."));
                 }
 
-                Mono<String> profilUrlMono = mediaService.uploadFile(profilFile).map(MediaEntity::getFileUrl);
-                Mono<String> cniUrlMono = mediaService.uploadFile(cniFile).map(MediaEntity::getFileUrl);
-                Mono<String> licenseUrlMono = mediaService.uploadFile(licenseFile).map(MediaEntity::getFileUrl);
-
-                return Mono.zip(profilUrlMono, cniUrlMono, licenseUrlMono)
-                    .flatMap(tuple -> {
-                        DriverEntity driver = DriverEntity.builder()
-                                .id(UUID.randomUUID())
-                                .organizationId(orgId)
-                                .agencyId(agencyId)
-                                .firstname(firstname)
-                                .lastname(lastname)
-                                .tel(tel)
-                                .age(age)
-                                .gender(gender)
-                                .profilUrl(tuple.getT1())
-                                .cniUrl(tuple.getT2())
-                                .drivingLicenseUrl(tuple.getT3())
-                                .cniNumber(cniNumber)
-                                .licenseNumber(licenseNumber)
-                                .licenseExpiry(licenseExpiry)
-                                .yearsExperience(yearsExperience)
-                                .createdAt(LocalDateTime.now())
-                                .updatedAt(LocalDateTime.now())
-                                .rating(0.0)
-                                .isNewRecord(true)
-                                .build();
-
-                        return driverRepository.save(driver).flatMap(saved -> {
-                            if (saved == null) {
-                                return Mono.error(new RuntimeException("Failed to save driver"));
-                            }
-                            return organizationService.updateDriverCounter(orgId, 1)
-                                    .then(updateAgencyDriverStats(agencyId, 1))
-                                    .thenReturn(saved);
-                        });
-                    });
+                // Upload documents first (disk I/O) — avoid holding DB transactions during large PDF transfers.
+                return uploadDriverDocuments(profilFile, cniFile, licenseFile)
+                    .flatMap(urls -> persistDriver(
+                            orgId,
+                            agencyId,
+                            firstname,
+                            lastname,
+                            tel,
+                            age,
+                            gender,
+                            cniNumber,
+                            licenseNumber,
+                            licenseExpiry,
+                            yearsExperience,
+                            urls,
+                            pricePerHour,
+                            pricePerDay,
+                            pricePerMonth));
             })
-            .flatMap(saved -> applyInitialPricing(orgId, saved, pricePerHour, pricePerDay, pricePerMonth))
             .doOnSuccess(d -> eventPublisher.publishEvent(new AuditEvent("CREATE_DRIVER", "DRIVER",
                     "Conducteur créé : " + d.getFirstname() + " " + d.getLastname())))
             .flatMap(this::enrichDriver);
     }
+
+    private Mono<DriverDocumentUrls> uploadDriverDocuments(
+            FilePart profilFile,
+            FilePart cniFile,
+            FilePart licenseFile) {
+        return mediaService.uploadFile(profilFile)
+                .map(MediaEntity::getFileUrl)
+                .flatMap(profilUrl -> mediaService.uploadFile(cniFile)
+                        .map(MediaEntity::getFileUrl)
+                        .flatMap(cniUrl -> mediaService.uploadFile(licenseFile)
+                                .map(MediaEntity::getFileUrl)
+                                .map(licenseUrl -> new DriverDocumentUrls(profilUrl, cniUrl, licenseUrl))));
+    }
+
+    private Mono<DriverEntity> persistDriver(
+            UUID orgId,
+            UUID agencyId,
+            String firstname,
+            String lastname,
+            String tel,
+            Integer age,
+            Integer gender,
+            String cniNumber,
+            String licenseNumber,
+            java.time.LocalDate licenseExpiry,
+            Integer yearsExperience,
+            DriverDocumentUrls urls,
+            BigDecimal pricePerHour,
+            BigDecimal pricePerDay,
+            BigDecimal pricePerMonth) {
+
+        DriverEntity driver = DriverEntity.builder()
+                .id(UUID.randomUUID())
+                .organizationId(orgId)
+                .agencyId(agencyId)
+                .firstname(firstname)
+                .lastname(lastname)
+                .tel(tel)
+                .age(age)
+                .gender(gender)
+                .profilUrl(urls.profilUrl())
+                .cniUrl(urls.cniUrl())
+                .drivingLicenseUrl(urls.licenseUrl())
+                .cniNumber(cniNumber)
+                .licenseNumber(licenseNumber)
+                .licenseExpiry(licenseExpiry)
+                .yearsExperience(yearsExperience)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .rating(0.0)
+                .isNewRecord(true)
+                .build();
+
+        return driverRepository.save(driver)
+                .flatMap(saved -> {
+                    if (saved == null) {
+                        return Mono.error(new RuntimeException("Failed to save driver"));
+                    }
+                    return organizationService.updateDriverCounter(orgId, 1)
+                            .then(updateAgencyDriverStats(agencyId, 1))
+                            .thenReturn(saved);
+                })
+                .flatMap(saved -> applyInitialPricing(orgId, saved, pricePerHour, pricePerDay, pricePerMonth));
+    }
+
+    private record DriverDocumentUrls(String profilUrl, String cniUrl, String licenseUrl) {}
 
     public Flux<DriverResponseDTO> getDriversByOrg(UUID orgId) {
         return driverRepository.findAllByOrganizationId(orgId)

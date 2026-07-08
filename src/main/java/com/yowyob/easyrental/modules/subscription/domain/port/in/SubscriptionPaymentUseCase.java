@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.subscription.domain.port.in;
 
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import reactor.core.publisher.Mono;
 
 /**
@@ -9,5 +10,5 @@ import reactor.core.publisher.Mono;
  * @since 2026-06-03
  */
 public interface SubscriptionPaymentUseCase {
-    Mono<Boolean> processPayment(String email, String planType, double amount);
+    Mono<Boolean> processPayment(String email, String planType, double amount, PaymentMethod method);
 }

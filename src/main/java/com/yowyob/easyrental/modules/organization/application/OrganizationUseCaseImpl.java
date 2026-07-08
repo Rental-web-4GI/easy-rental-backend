@@ -8,6 +8,7 @@ import com.yowyob.easyrental.modules.organization.dto.OrgUserResponseDTO;
 import com.yowyob.easyrental.modules.organization.mapper.OrgMapper;
 import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
@@ -410,6 +411,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
 
     public Mono<Boolean> validateQuota(UUID orgId, String resourceType) {
         return organizationRepository.findById(orgId)
+                .flatMap(subscriptionUseCase::checkAndDowngrade)
                 .flatMap(org -> planRepository.findById(org.getSubscriptionPlanId())
                         .map(plan -> switch (resourceType.toUpperCase()) {
                             case "AGENCY" -> org.getCurrentAgencies() < plan.getMaxAgencies();
@@ -484,8 +486,18 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     }
 
     @Override
-    public Mono<SubscriptionResponseDTO> upgradePlanWithResponse(UUID orgId, String planName) {
-        return subscriptionUseCase.upgradePlan(orgId, planName)
+    public Mono<SubscriptionResponseDTO> upgradePlanWithResponse(
+            UUID orgId,
+            String planName,
+            PaymentMethod paymentMethod) {
+        return subscriptionUseCase.upgradePlan(orgId, planName, paymentMethod)
+                .flatMap(plan -> organizationRepository.findById(orgId)
+                        .flatMap(subscriptionUseCase::buildSubscriptionResponse));
+    }
+
+    @Override
+    public Mono<SubscriptionResponseDTO> adminAssignPlanWithResponse(UUID orgId, String planName) {
+        return subscriptionUseCase.adminAssignPlan(orgId, planName)
                 .flatMap(plan -> organizationRepository.findById(orgId)
                         .flatMap(subscriptionUseCase::buildSubscriptionResponse));
     }

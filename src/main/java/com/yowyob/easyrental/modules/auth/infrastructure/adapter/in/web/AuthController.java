@@ -4,6 +4,7 @@ import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
 import com.yowyob.easyrental.modules.auth.dto.MfaConfirmRequest;
+import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
@@ -59,9 +60,9 @@ public class AuthController {
     }
 
     @PostMapping("/register/client")
-    public Mono<ResponseEntity<UserEntity>> registerClient(@RequestBody RegisterRequest request) {
+    public Mono<ResponseEntity<RegisterClientResponse>> registerClient(@RequestBody RegisterRequest request) {
         return authUseCase.registerClient(request)
-                .map(ResponseEntity::ok);
+                .map(body -> ResponseEntity.status(HttpStatus.CREATED).body(body));
     }
 
     @PostMapping("/register/organizationOwner")

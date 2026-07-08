@@ -1,9 +1,9 @@
 package com.yowyob.easyrental.modules.subscription.dto;
 
-import com.yowyob.easyrental.modules.subscription.domain.PlanType;
-import jakarta.validation.constraints.NotNull;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
+import jakarta.validation.constraints.NotBlank;
 
-// Utilise l'Enum PlanType (FREE, PRO, ENTERPRISE)
 public record PlanUpgradeRequest(
-    @NotNull PlanType newPlan
+        @NotBlank String newPlan,
+        PaymentMethod paymentMethod
 ) {}

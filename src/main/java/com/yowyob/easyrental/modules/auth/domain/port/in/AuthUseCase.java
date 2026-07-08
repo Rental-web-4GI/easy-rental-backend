@@ -3,6 +3,7 @@ package com.yowyob.easyrental.modules.auth.domain.port.in;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
+import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.dto.OrgRegisterRequest;
@@ -19,6 +20,6 @@ public interface AuthUseCase {
     Mono<AuthResponse> confirmMfa(String mfaToken, String code);
     Mono<UserEntity> getCurrentUser();
     Mono<AuthResponse> refreshToken(String oldToken);
-    Mono<UserEntity> registerClient(RegisterRequest request);
+    Mono<RegisterClientResponse> registerClient(RegisterRequest request);
     Mono<OrganizationEntity> registerOrganization(OrgRegisterRequest request);
 }

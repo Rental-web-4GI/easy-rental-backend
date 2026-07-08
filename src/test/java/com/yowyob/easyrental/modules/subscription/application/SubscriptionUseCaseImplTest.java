@@ -9,6 +9,7 @@ import com.yowyob.easyrental.modules.subscription.domain.SubscriptionEntity;
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
 import com.yowyob.easyrental.modules.subscription.mapper.SubscriptionMapper;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -101,7 +102,8 @@ class SubscriptionUseCaseImplTest {
                 .id(orgId).subscriptionPlanId(planId).subscriptionExpiresAt(null).build();
         SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder().id(planId).name("FREE").price(BigDecimal.ZERO).build();
         SubscriptionResponseDTO response = new SubscriptionResponseDTO(
-                "FREE", "Free plan", BigDecimal.ZERO, 30, 10, 5, null, false);
+                "FREE", "Free plan", BigDecimal.ZERO, 30, 10, 5, null, false, false,
+                0L, false, false, false, false, false, BigDecimal.ZERO, "UNLIMITED");
 
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
         when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
@@ -158,11 +160,12 @@ class SubscriptionUseCaseImplTest {
 
         when(planRepository.findByName("PRO")).thenReturn(Mono.just(proPlan));
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
-        when(paymentService.processPayment("org@test.com", "PRO", 5000.0)).thenReturn(Mono.just(true));
+        when(paymentService.processPayment("org@test.com", "PRO", 5000.0, PaymentMethod.MOMO))
+                .thenReturn(Mono.just(true));
         when(organizationRepository.save(any())).thenReturn(Mono.just(org));
         when(subscriptionRepository.save(any())).thenReturn(Mono.just(SubscriptionEntity.builder().id(UUID.randomUUID()).build()));
 
-        StepVerifier.create(subscriptionUseCase.upgradePlan(orgId, "PRO"))
+        StepVerifier.create(subscriptionUseCase.upgradePlan(orgId, "PRO", PaymentMethod.MOMO))
                 .expectNextMatches(p -> p.getName().equals("PRO"))
                 .verifyComplete();
     }
@@ -188,7 +191,8 @@ class SubscriptionUseCaseImplTest {
                 .id(UUID.randomUUID()).subscriptionPlanId(planId).build();
         SubscriptionPlanEntity plan = SubscriptionPlanEntity.builder().id(planId).name("PRO").build();
         SubscriptionResponseDTO response = new SubscriptionResponseDTO(
-                "PRO", "Pro plan", BigDecimal.TEN, 30, 10, 5, null, false);
+                "PRO", "Pro plan", BigDecimal.TEN, 30, 10, 5, null, false, false,
+                20L, false, false, false, false, false, BigDecimal.TEN, "MONTHLY");
 
         when(planRepository.findById(planId)).thenReturn(Mono.just(plan));
         when(subscriptionMapper.toResponseDTO(org, plan)).thenReturn(response);

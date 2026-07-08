@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <changeSet id="14-support-messaging" author="easyrental">
+        <createTable tableName="support_threads">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="visitor_email" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="visitor_name" type="VARCHAR(255)"/>
+            <column name="user_id" type="UUID"/>
+            <column name="subject" type="VARCHAR(255)"/>
+            <column name="status" type="VARCHAR(32)" defaultValue="OPEN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="admin_unread_count" type="INTEGER" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_message_at" type="TIMESTAMP"/>
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createTable tableName="support_messages">
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="thread_id" type="UUID">
+                <constraints nullable="false"
+                    foreignKeyName="fk_support_msg_thread"
+                    referencedTableName="support_threads"
+                    referencedColumnNames="id"
+                    deleteCascade="true"/>
+            </column>
+            <column name="sender_role" type="VARCHAR(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="body" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP" defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex tableName="support_threads" indexName="idx_support_threads_email">
+            <column name="visitor_email"/>
+        </createIndex>
+        <createIndex tableName="support_messages" indexName="idx_support_messages_thread">
+            <column name="thread_id"/>
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

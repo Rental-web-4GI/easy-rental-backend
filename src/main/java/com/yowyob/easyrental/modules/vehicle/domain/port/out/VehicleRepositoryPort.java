@@ -33,4 +33,6 @@ public interface VehicleRepositoryPort {
     Flux<VehicleEntity> findAllByAgencyIdAndStatut(UUID agencyId, String statut);
 
     Flux<VehicleEntity> searchAvailableVehicles(UUID agencyId, UUID categoryId, String keyword);
+
+    Flux<VehicleEntity> findCatalogAvailableVehicles();
 }

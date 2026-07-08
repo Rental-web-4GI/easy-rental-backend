@@ -11,5 +11,8 @@ public record ReviewResponseDTO(
     Integer rating,
     String comment,
     String authorName,
+    String authorRole,
+    Boolean published,
+    String sourceLabel,
     LocalDateTime createdAt
 ) {}

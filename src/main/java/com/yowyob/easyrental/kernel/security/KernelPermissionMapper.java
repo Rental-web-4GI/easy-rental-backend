@@ -82,16 +82,16 @@ public final class KernelPermissionMapper {
             return true;
         }
         if ("vehicle:update".equals(frontendTag) || "vehiclecategory:update".equals(frontendTag)) {
-            return claims.permissions().contains("rental:vehicle:write");
+            return permissionsContain(claims.permissions(), "rental:vehicle:write", "vehicle:update");
         }
         if ("driver:update".equals(frontendTag)) {
-            return claims.permissions().contains("rental:driver:write");
+            return permissionsContain(claims.permissions(), "rental:driver:write", "driver:update");
         }
         String kernelPermission = TAG_TO_KERNEL.get(frontendTag);
-        if (kernelPermission != null && claims.permissions().contains(kernelPermission)) {
+        if (kernelPermission != null && permissionsContain(claims.permissions(), kernelPermission, frontendTag)) {
             return true;
         }
-        return claims.permissions().contains(frontendTag);
+        return permissionsContain(claims.permissions(), null, frontendTag);
     }
 
     public static List<String> toFrontendTags(KernelAuthClaims claims) {
@@ -99,9 +99,28 @@ public final class KernelPermissionMapper {
             return KERNEL_TO_TAG.values().stream().distinct().toList();
         }
         return claims.permissions().stream()
-                .map(p -> KERNEL_TO_TAG.getOrDefault(p, p))
+                .map(p -> KERNEL_TO_TAG.getOrDefault(permissionBase(p), permissionBase(p)))
                 .distinct()
                 .toList();
+    }
+
+    private static String permissionBase(String permission) {
+        int scopeIdx = permission.indexOf('#');
+        return scopeIdx >= 0 ? permission.substring(0, scopeIdx) : permission;
+    }
+
+    private static boolean permissionsContain(
+            List<String> permissions, String kernelPermission, String frontendTag) {
+        for (String raw : permissions) {
+            String base = permissionBase(raw);
+            if (kernelPermission != null && base.equals(kernelPermission)) {
+                return true;
+            }
+            if (frontendTag != null && base.equals(frontendTag)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Map<String, String> invert(Map<String, String> source) {

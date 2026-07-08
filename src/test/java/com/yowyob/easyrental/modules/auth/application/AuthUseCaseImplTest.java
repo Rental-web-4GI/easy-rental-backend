@@ -1,5 +1,8 @@
 package com.yowyob.easyrental.modules.auth.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
@@ -10,6 +13,7 @@ import com.yowyob.easyrental.modules.organization.dto.OrgRegisterRequest;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUseCase;
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.shared.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +30,7 @@ import reactor.test.StepVerifier;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -59,6 +64,8 @@ class AuthUseCaseImplTest {
     private com.yowyob.easyrental.kernel.application.KernelSessionStore kernelSessionStore;
     @Mock
     private com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
+    @Mock
+    private EasyRentalProperties easyRentalProperties;
 
     @InjectMocks
     private AuthUseCaseImpl authUseCase;
@@ -66,11 +73,17 @@ class AuthUseCaseImplTest {
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         org.mockito.Mockito.lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+        EasyRentalProperties.Client client = new EasyRentalProperties.Client();
+        client.setSkipKernelAuth(true);
+        org.mockito.Mockito.lenient().when(easyRentalProperties.getClient()).thenReturn(client);
     }
 
     @Test
     void shouldReturnMfaRequiredWhenKernelLoginRequiresMfa() {
         when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        EasyRentalProperties.Client clientProps = new EasyRentalProperties.Client();
+        clientProps.setSkipKernelAuth(false);
+        when(easyRentalProperties.getClient()).thenReturn(clientProps);
         LoginRequest request = new LoginRequest("admin@test.com", "password");
         when(userRepository.findByEmail("admin@test.com")).thenReturn(Mono.empty());
         when(kernelAuthAdapter.login("admin@test.com", "password"))
@@ -154,7 +167,8 @@ class AuthUseCaseImplTest {
         when(userRepository.save(any())).thenReturn(Mono.just(saved));
 
         StepVerifier.create(authUseCase.registerClient(request))
-                .expectNextMatches(u -> u.getEmail().equals("new@test.com"))
+                .expectNextMatches(r -> r.user().getEmail().equals("new@test.com")
+                        && !r.emailVerificationRequired())
                 .verifyComplete();
     }
 
@@ -165,8 +179,34 @@ class AuthUseCaseImplTest {
                 .thenReturn(Mono.just(UserEntity.builder().id(UUID.randomUUID()).email("exists@test.com").build()));
 
         StepVerifier.create(authUseCase.registerClient(request))
-                .expectErrorMatches(e -> e.getMessage().equals("Email already exists"))
+                .expectError(ValidationException.class)
                 .verify();
+    }
+
+    @Test
+    void shouldRegisterClientWithKernelEmailVerificationRequired() {
+        RegisterRequest request = new RegisterRequest("John", "Doe", "kernel-client@test.com", "pass");
+        ObjectNode signUpData = new ObjectMapper().createObjectNode();
+        signUpData.put("status", "EMAIL_VERIFICATION_REQUIRED");
+        signUpData.put("id", UUID.randomUUID().toString());
+        UserEntity saved = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("kernel-client@test.com")
+                .role("CLIENT")
+                .build();
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        EasyRentalProperties.Client clientProps = new EasyRentalProperties.Client();
+        clientProps.setSkipKernelAuth(false);
+        when(easyRentalProperties.getClient()).thenReturn(clientProps);
+        when(userRepository.findByEmail("kernel-client@test.com")).thenReturn(Mono.empty());
+        when(kernelAuthAdapter.signUp(anyMap())).thenReturn(Mono.just(signUpData));
+        when(userRepository.save(any())).thenReturn(Mono.just(saved));
+
+        StepVerifier.create(authUseCase.registerClient(request))
+                .expectNextMatches(r -> r.emailVerificationRequired()
+                        && r.user().getEmail().equals("kernel-client@test.com"))
+                .verifyComplete();
     }
 
     @Test

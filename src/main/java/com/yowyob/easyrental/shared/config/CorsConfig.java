@@ -19,6 +19,7 @@ public class CorsConfig {
                                                     "http://localhost:3001",
                                                     "http://localhost:3002",
                                                     "http://localhost:3003",
+                                                    "http://localhost:3004",
                                                     "https://pwa-easy-renta.vercel.app",
                                                     "https://pwa-easy-rental-mfe-client.vercel.app",
                                                     "https://pwa-easy-rental-agency.vercel.app",

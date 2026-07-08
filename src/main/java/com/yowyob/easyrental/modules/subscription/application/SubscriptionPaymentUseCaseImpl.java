@@ -1,26 +1,32 @@
 package com.yowyob.easyrental.modules.subscription.application;
 
 import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionPaymentUseCase;
+import com.yowyob.easyrental.shared.enums.PaymentMethod;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+
 import java.time.Duration;
 
 @Service
 @Slf4j
 public class SubscriptionPaymentUseCaseImpl implements SubscriptionPaymentUseCase {
 
-    /**
-     * Simule un appel à une passerelle de paiement (Stripe, etc.)
-     */
-    public Mono<Boolean> processPayment(String email, String planType, double amount) {
-        log.info("💳 Simulation du paiement pour {} (Plan: {}, Montant: {}XAF)", email, planType, amount);
-
-        // Simule un délai réseau de 800ms sans bloquer le thread
-        return Mono.delay(Duration.ofMillis(800))
-                .map(d -> {
-                    log.info("✅ Paiement validé par la passerelle pour {}", email);
-                    return true;
-                });
+  /**
+   * Simulates a payment gateway call (MoMo, OM, card, cash at agency).
+   * Replace with real billing integration in production.
+   */
+  public Mono<Boolean> processPayment(String email, String planType, double amount, PaymentMethod method) {
+    if (method == null) {
+      return Mono.error(new ValidationException("Payment method is required for paid subscription plans"));
     }
+    log.info("Payment simulation for {} — plan {} — {} XAF via {}", email, planType, amount, method);
+
+    return Mono.delay(Duration.ofMillis(900))
+        .map(ignored -> {
+          log.info("Payment validated for {} via {}", email, method);
+          return true;
+        });
+  }
 }

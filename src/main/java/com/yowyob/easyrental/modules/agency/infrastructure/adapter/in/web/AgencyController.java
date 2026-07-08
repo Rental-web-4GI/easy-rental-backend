@@ -80,7 +80,7 @@ public class AgencyController {
 
     @Operation(summary = "Modifier une agence")
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#id, 'agency:update')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.hasPermission(#id, 'agency:update', authentication)")
     public Mono<ResponseEntity<AgencyResponseDTO>> update(
             @PathVariable UUID id,
             @RequestBody AgencyRequestDTO request) {
@@ -89,7 +89,7 @@ public class AgencyController {
 
     @Operation(summary = "Supprimer une agence")
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.canAccessAgency(#id, 'agency:delete')")
+    @PreAuthorize("hasRole('ORGANIZATION') or @rbac.checkAgencyAccess(#id, 'agency:delete', authentication)")
     public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
         return agencyUseCase.deleteAgency(id).then(Mono.just(ResponseEntity.noContent().build()));
     }

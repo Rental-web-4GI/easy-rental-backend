@@ -282,7 +282,7 @@ class VehicleUseCaseImplTest {
 
     @Test
     void shouldGetAvailableVehicles() {
-        when(vehicleRepository.findAllByStatut("AVAILABLE")).thenReturn(Flux.just(sampleVehicle));
+        when(vehicleRepository.findCatalogAvailableVehicles()).thenReturn(Flux.just(sampleVehicle));
         stubEnrichVehicle();
 
         StepVerifier.create(vehicleUseCase.getAvailableVehicles())

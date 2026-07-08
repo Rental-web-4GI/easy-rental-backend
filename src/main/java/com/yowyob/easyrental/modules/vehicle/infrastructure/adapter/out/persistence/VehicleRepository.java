@@ -33,4 +33,23 @@ public interface VehicleRepository extends R2dbcRepository<VehicleEntity, UUID> 
            "AND (:categoryId::uuid IS NULL OR category_id = :categoryId) " +
            "AND (:keyword::text IS NULL OR brand ILIKE '%' || :keyword || '%' OR model ILIKE '%' || :keyword || '%')")
     Flux<VehicleEntity> searchAvailableVehicles(UUID agencyId, UUID categoryId, String keyword);
+
+    /** Catalogue client : véhicules réservables (abonnement valide, agence en ligne, tarif défini). */
+    @Query("""
+            SELECT v.* FROM vehicles v
+            INNER JOIN agencies a ON a.id = v.agency_id
+            INNER JOIN organizations o ON o.id = v.organization_id
+            WHERE v.statut = 'AVAILABLE'
+              AND COALESCE(a.allow_online_booking, true) = true
+              AND (o.subscription_expires_at IS NULL OR o.subscription_expires_at > NOW())
+              AND LENGTH(TRIM(COALESCE(v.brand, ''))) >= 3
+              AND LENGTH(TRIM(COALESCE(v.model, ''))) >= 2
+              AND EXISTS (
+                SELECT 1 FROM pricings p
+                WHERE p.resource_id = v.id
+                  AND p.resource_type = 'VEHICLE'
+                  AND (COALESCE(p.price_per_day, 0) > 0 OR COALESCE(p.price_per_hour, 0) > 0)
+              )
+            """)
+    Flux<VehicleEntity> findCatalogAvailableVehicles();
 }

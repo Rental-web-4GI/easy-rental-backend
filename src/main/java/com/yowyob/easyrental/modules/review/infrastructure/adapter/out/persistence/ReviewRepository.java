@@ -16,4 +16,19 @@ public interface ReviewRepository extends R2dbcRepository<ReviewEntity, UUID> {
     // Calcul de la moyenne directement en base
     @Query("SELECT AVG(rating) FROM reviews WHERE resource_type = :resourceType AND resource_id = :resourceId")
     Mono<Double> getAverageRating(ResourceType resourceType, UUID resourceId);
+
+    @Query("SELECT * FROM reviews WHERE published = true ORDER BY created_at DESC LIMIT :limit")
+    Flux<ReviewEntity> findPublishedLatest(int limit);
+
+    @Query("SELECT * FROM reviews ORDER BY created_at DESC")
+    Flux<ReviewEntity> findAllOrderedByCreatedAtDesc();
+
+    @Query("SELECT AVG(rating) FROM reviews WHERE published = true")
+    Mono<Double> getPublishedAverageRating();
+
+    @Query("SELECT COUNT(*) FROM reviews WHERE published = true")
+    Mono<Long> countPublished();
+
+    @Query("SELECT COUNT(*) FROM reviews WHERE published = false OR published IS NULL")
+    Mono<Long> countUnpublished();
 }

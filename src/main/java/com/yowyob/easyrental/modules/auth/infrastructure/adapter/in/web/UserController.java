@@ -60,12 +60,18 @@ public class UserController {
                     .map(ctx -> ctx.getAuthentication())
                     .flatMapMany(auth -> {
                         if (auth instanceof KernelAuthenticationToken kernelAuth) {
-                            return Flux.fromIterable(KernelPermissionMapper.toFrontendTags(kernelAuth.getClaims()))
+                            Flux<PermissionEntity> fromKernel = Flux.fromIterable(
+                                            KernelPermissionMapper.toFrontendTags(kernelAuth.getClaims()))
                                     .map(tag -> PermissionEntity.builder()
                                             .tag(tag)
                                             .name(tag)
                                             .module("rental")
                                             .build());
+                            return authUseCase.getCurrentUser()
+                                    .flatMapMany(user -> Flux.merge(
+                                            fromKernel,
+                                            userUseCase.getUserPermissions(user.getId())))
+                                    .distinct(PermissionEntity::getTag);
                         }
                         return authUseCase.getCurrentUser()
                                 .flatMapMany(user -> userUseCase.getUserPermissions(user.getId()));

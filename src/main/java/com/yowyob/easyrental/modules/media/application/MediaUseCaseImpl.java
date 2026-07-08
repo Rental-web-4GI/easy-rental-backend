@@ -31,12 +31,17 @@ import java.util.UUID;
 @Slf4j
 public class MediaUseCaseImpl implements MediaUseCase {
 
-    @Value("${application.file.upload-dir:uploads}")
-    private String uploadDir;
+  private static final long DEFAULT_MAX_UPLOAD_BYTES = 16L * 1024L * 1024L;
 
-    // Utilisé pour construire l'URL complète si besoin, sinon on renvoie le chemin relatif
-    @Value("${application.base-url:http://localhost:8080}")
-    private String baseUrl;
+  @Value("${application.file.upload-dir:uploads}")
+  private String uploadDir;
+
+  @Value("${application.file.max-upload-bytes:16777216}")
+  private long maxUploadBytes;
+
+  // Utilisé pour construire l'URL complète si besoin, sinon on renvoie le chemin relatif
+  @Value("${application.base-url:http://localhost:8080}")
+  private String baseUrl;
 
     private final MediaRepositoryPort mediaRepository;
     private final UserRepositoryPort userRepository;
@@ -53,36 +58,62 @@ public class MediaUseCaseImpl implements MediaUseCase {
     }
 
     public Mono<MediaEntity> uploadFile(FilePart filePart) {
-        return resolveCurrentUser()
+        return validateUpload(filePart)
+                .then(resolveCurrentUser())
                 .flatMap(user -> {
-                    // Logique de nommage
                     Mono<String> prefixMono;
 
                     if ("ORGANIZATION".equals(user.getRole())) {
-                        // Si c'est une ORG, on cherche son nom
-                        prefixMono = organizationRepository.findByOwnerId(user
-                                .getId()) // Méthode à ajouter dans OrgRepo*
+                        prefixMono = organizationRepository.findByOwnerId(user.getId())
                                 .map(org -> sanitizeFilename(org.getName()))
                                 .defaultIfEmpty("org_" + user.getId());
+                    } else if ("STAFF".equals(user.getRole()) && user.getOrganizationId() != null) {
+                        prefixMono = organizationRepository.findById(user.getOrganizationId())
+                                .map(org -> sanitizeFilename(org.getName()))
+                                .defaultIfEmpty("staff_" + user.getId());
                     } else {
-                        // Si c'est un CLIENT, on utilise son ID ou nom
                         prefixMono = Mono.just("user_" + sanitizeFilename(user.getLastname()));
                     }
 
                     return prefixMono.flatMap(prefix -> {
-                        // Construction du nom unique
                         String extension = getFileExtension(filePart.filename());
                         String uniqueName = prefix + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
                         Path destinationFile = Paths.get(uploadDir).resolve(uniqueName).toAbsolutePath();
-
-                        // URL Publique
                         String publicUrl = baseUrl + "/uploads/" + uniqueName;
 
-                        // Sauvegarde physique + Base de données
                         return filePart.transferTo(Objects.requireNonNull(destinationFile))
                                 .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()));
                     });
                 });
+    }
+
+    private Mono<Void> validateUpload(FilePart filePart) {
+        if (filePart == null || filePart.filename() == null || filePart.filename().isBlank()) {
+            return Mono.error(new IllegalArgumentException("Uploaded file is required"));
+        }
+
+        String filename = filePart.filename().toLowerCase();
+        if (!isAllowedDocument(filename)) {
+            return Mono.error(new IllegalArgumentException(
+                    "Unsupported file type. Allowed: JPG, PNG, WEBP, PDF"));
+        }
+
+        long limit = maxUploadBytes > 0 ? maxUploadBytes : DEFAULT_MAX_UPLOAD_BYTES;
+        long contentLength = filePart.headers().getContentLength();
+        if (contentLength > 0 && contentLength > limit) {
+            return Mono.error(new IllegalArgumentException(
+                    "File too large. Maximum size is " + (limit / (1024 * 1024)) + " MB"));
+        }
+
+        return Mono.empty();
+    }
+
+    private boolean isAllowedDocument(String filename) {
+        return filename.endsWith(".jpg")
+                || filename.endsWith(".jpeg")
+                || filename.endsWith(".png")
+                || filename.endsWith(".webp")
+                || filename.endsWith(".pdf");
     }
 
     private Mono<UserEntity> resolveCurrentUser() {
