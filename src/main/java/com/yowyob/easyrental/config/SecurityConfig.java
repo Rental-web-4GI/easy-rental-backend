@@ -40,7 +40,7 @@ public class SecurityConfig {
                         .pathMatchers(
                             "/api/support/config",
                             "/api/support/messages",
-                            "/api/support/threads/*/messages")
+                            "/api/support/conversation/messages")
                         .permitAll()
                         .pathMatchers(
                             "/api/vehicles/available",

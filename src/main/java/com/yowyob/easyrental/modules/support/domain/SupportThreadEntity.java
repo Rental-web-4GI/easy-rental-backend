@@ -24,6 +24,8 @@ public class SupportThreadEntity implements Persistable<UUID> {
     private UUID id;
     private String visitorEmail;
     private String visitorName;
+    private String visitorSessionId;
+    private String visitorRole;
     private UUID userId;
     private String subject;
     private String status;

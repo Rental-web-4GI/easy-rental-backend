@@ -11,4 +11,20 @@ public interface SupportMessageRepository extends R2dbcRepository<SupportMessage
 
     @Query("SELECT * FROM support_messages WHERE thread_id = :threadId ORDER BY created_at ASC")
     Flux<SupportMessageEntity> findByThreadIdOrderByCreatedAt(UUID threadId);
+
+    @Query("""
+            SELECT m.* FROM support_messages m
+            INNER JOIN support_threads t ON t.id = m.thread_id
+            WHERE LOWER(t.visitor_email) = LOWER(:visitorEmail)
+            ORDER BY m.created_at ASC
+            """)
+    Flux<SupportMessageEntity> findAllByVisitorEmailOrderByCreatedAt(String visitorEmail);
+
+    @Query("""
+            SELECT m.* FROM support_messages m
+            INNER JOIN support_threads t ON t.id = m.thread_id
+            WHERE t.visitor_session_id = :visitorSessionId
+            ORDER BY m.created_at ASC
+            """)
+    Flux<SupportMessageEntity> findAllByVisitorSessionIdOrderByCreatedAt(String visitorSessionId);
 }

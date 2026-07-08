@@ -449,5 +449,6 @@
     <include file="db/changelog/changes/14-support-messaging.xml"/>
     <include file="db/changelog/changes/15-yearly-plan-pricing.xml"/>
     <include file="db/changelog/changes/16-review-moderation.xml"/>
+    <include file="db/changelog/changes/17-support-visitor-session.xml"/>
 
 </databaseChangeLog>

@@ -24,8 +24,28 @@ public class SupportRepositoryAdapter implements SupportRepositoryPort {
     }
 
     @Override
+    public Mono<SupportThreadEntity> findLatestThreadByVisitorEmail(String visitorEmail) {
+        return threadRepository.findLatestByVisitorEmail(visitorEmail.trim().toLowerCase());
+    }
+
+    @Override
+    public Mono<SupportThreadEntity> findLatestThreadByVisitorSessionId(String visitorSessionId) {
+        return threadRepository.findLatestByVisitorSessionId(visitorSessionId.trim());
+    }
+
+    @Override
     public Flux<SupportThreadEntity> findAllThreads() {
         return threadRepository.findAllOrdered();
+    }
+
+    @Override
+    public Flux<SupportThreadEntity> findAllThreadsByVisitorEmail(String visitorEmail) {
+        return threadRepository.findAllByVisitorEmail(visitorEmail.trim().toLowerCase());
+    }
+
+    @Override
+    public Flux<SupportThreadEntity> findAllThreadsByVisitorSessionId(String visitorSessionId) {
+        return threadRepository.findAllByVisitorSessionId(visitorSessionId.trim());
     }
 
     @Override
@@ -36,6 +56,16 @@ public class SupportRepositoryAdapter implements SupportRepositoryPort {
     @Override
     public Flux<SupportMessageEntity> findMessagesByThreadId(UUID threadId) {
         return messageRepository.findByThreadIdOrderByCreatedAt(threadId);
+    }
+
+    @Override
+    public Flux<SupportMessageEntity> findAllMessagesByVisitorEmail(String visitorEmail) {
+        return messageRepository.findAllByVisitorEmailOrderByCreatedAt(visitorEmail.trim().toLowerCase());
+    }
+
+    @Override
+    public Flux<SupportMessageEntity> findAllMessagesByVisitorSessionId(String visitorSessionId) {
+        return messageRepository.findAllByVisitorSessionIdOrderByCreatedAt(visitorSessionId.trim());
     }
 
     @Override
