@@ -41,6 +41,7 @@ kernel-core.credentials.env
 .kernel-e2e-spring.log
 .env.kernel
 .env.kernel.*
+.env.prod
 
 # Local build artefacts — do not commit
 .m2/
