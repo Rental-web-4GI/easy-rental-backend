@@ -20,6 +20,7 @@ import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUse
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionPlanEntity;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import com.yowyob.easyrental.shared.enums.PaymentMethod;
@@ -54,6 +55,7 @@ class OrganizationUseCaseImplTest {
     @Mock private MediaUseCase mediaService;
     @Mock private UserRepositoryPort userRepository;
     @Mock private SubscriptionUseCase subscriptionUseCase;
+    @Mock private VehicleRepositoryPort vehicleRepository;
     @Mock private KernelClientProperties kernelProperties;
     @Mock private KernelOrganizationAdapter kernelOrganizationAdapter;
     @Mock private KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
@@ -70,6 +72,7 @@ class OrganizationUseCaseImplTest {
                 mediaService,
                 userRepository,
                 subscriptionUseCase,
+                vehicleRepository,
                 kernelProperties,
                 kernelOrganizationAdapter,
                 kernelOrganizationBootstrapService,
@@ -77,6 +80,7 @@ class OrganizationUseCaseImplTest {
         lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
         lenient().when(kernelLocalOrganizationLinkService.ensureLocalOrganization(any(), any()))
                 .thenReturn(Mono.empty());
+        lenient().when(vehicleRepository.countByOrganizationId(any())).thenReturn(Mono.just(0L));
     }
 
     @Test

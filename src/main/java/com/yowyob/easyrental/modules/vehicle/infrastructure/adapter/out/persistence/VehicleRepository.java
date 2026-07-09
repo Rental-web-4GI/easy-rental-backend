@@ -21,6 +21,9 @@ public interface VehicleRepository extends R2dbcRepository<VehicleEntity, UUID> 
     @Query("SELECT COUNT(*) FROM vehicles WHERE category_id = :categoryId")
     Mono<Long> countByCategoryId(UUID categoryId);
 
+    @Query("SELECT COUNT(*) FROM vehicles WHERE organization_id = :organizationId")
+    Mono<Long> countByOrganizationId(UUID organizationId);
+
     Flux<VehicleEntity> findAllByOrganizationIdAndCategoryId(UUID organizationId, UUID categoryId);
     Flux<VehicleEntity> findAllByAgencyIdAndCategoryId(UUID agencyId, UUID categoryId);
 

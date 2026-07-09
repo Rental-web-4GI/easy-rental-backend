@@ -56,6 +56,11 @@ public class VehicleRepositoryAdapter implements VehicleRepositoryPort {
     }
 
     @Override
+    public Mono<Long> countByOrganizationId(UUID organizationId) {
+        return vehicleRepository.countByOrganizationId(organizationId);
+    }
+
+    @Override
     public Flux<VehicleEntity> findAllByOrganizationIdAndCategoryId(UUID organizationId, UUID categoryId) {
         return vehicleRepository.findAllByOrganizationIdAndCategoryId(organizationId, categoryId);
     }

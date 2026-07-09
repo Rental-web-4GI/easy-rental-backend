@@ -338,8 +338,15 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .flatMap(signUpData -> {
                     String status = signUpData.path("status").asText(null);
                     if ("EMAIL_VERIFICATION_REQUIRED".equals(status)) {
+                        if (easyRentalProperties.getOrg().isRequireEmailVerification()) {
+                            return Mono.error(new ValidationException(
+                                    "EMAIL_NOT_VERIFIED: Account created. "
+                                            + "Check your email to verify before signing in."));
+                        }
                         return Mono.error(new ValidationException(
-                                "EMAIL_NOT_VERIFIED: Account created. Check your email to verify before signing in."));
+                                "EMAIL_NOT_VERIFIED: Kernel created the account but email is not verified yet. "
+                                        + "Complete verification (scripts/kernel-verify-email.sh) then sign in. "
+                                        + "Staff recruitment never requires this step."));
                     }
                     String token = signUpData.path("accessToken").asText(null);
                     UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));

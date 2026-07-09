@@ -179,6 +179,8 @@ public class StaffUseCaseImpl implements StaffUseCase {
                                                                     .then(persistProvisionedStaff(
                                                                             orgId, request, provision, agency, null))
                                                                     .onErrorResume(ex -> isEmailVerificationPending(ex)
+                                                                            && easyRentalProperties.getStaff()
+                                                                                    .isSkipEmailVerification()
                                                                             ? persistProvisionedStaff(
                                                                                     orgId, request, provision, agency,
                                                                                     provision.temporaryPassword())

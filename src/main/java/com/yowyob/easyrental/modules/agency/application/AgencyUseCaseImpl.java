@@ -45,6 +45,12 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
         return organizationRepository.findById(Objects.requireNonNull(orgId))
             .switchIfEmpty(Mono.error(new RuntimeException("Organisation non trouvée")))
             .flatMap(org -> {
+                if (kernelProperties.isIntegrationEnabled()
+                        && org.getGovernanceStatus() != null
+                        && !"APPROVED".equalsIgnoreCase(org.getGovernanceStatus())) {
+                    return Mono.error(new RuntimeException(
+                            "ORG_NOT_APPROVED: Organisation must be approved before creating agencies"));
+                }
                 if (kernelProperties.isIntegrationEnabled() && org.getKernelOrganizationId() != null) {
                     return createAgencyViaKernel(org, request);
                 }

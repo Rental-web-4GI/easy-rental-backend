@@ -24,6 +24,7 @@ import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.domain.port.in.OrganizationUseCase;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -47,6 +48,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final MediaUseCase mediaService;
     private final UserRepositoryPort userRepository;
     private final SubscriptionUseCase subscriptionUseCase;
+    private final VehicleRepositoryPort vehicleRepository;
     private final KernelClientProperties kernelProperties;
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
     private final KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
@@ -54,12 +56,29 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
-                .map(orgMapper::toDto)
+                .flatMap(this::toDtoWithLiveVehicleCount)
                 .switchIfEmpty(Mono.error(new RuntimeException("Organization not found")));
     }
 
     public Flux<OrgResponseDTO> getAllOrganizations() {
-        return organizationRepository.findAll().map(orgMapper::toDto);
+        return organizationRepository.findAll().flatMap(this::toDtoWithLiveVehicleCount);
+    }
+
+    /**
+     * Admin quotas must reflect the real vehicles table, not a denormalized counter that can drift.
+     */
+    private Mono<OrgResponseDTO> toDtoWithLiveVehicleCount(OrganizationEntity org) {
+        return vehicleRepository.countByOrganizationId(org.getId())
+                .defaultIfEmpty(0L)
+                .flatMap(count -> {
+                    int live = count.intValue();
+                    Integer stored = org.getCurrentVehicles();
+                    if (stored != null && stored == live) {
+                        return Mono.just(orgMapper.toDto(org));
+                    }
+                    org.setCurrentVehicles(live);
+                    return organizationRepository.save(org).map(orgMapper::toDto);
+                });
     }
 
     @Transactional

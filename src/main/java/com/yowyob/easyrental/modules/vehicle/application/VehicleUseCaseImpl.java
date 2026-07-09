@@ -2,6 +2,7 @@ package com.yowyob.easyrental.modules.vehicle.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
@@ -64,6 +65,7 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
     private final ObjectMapper objectMapper;
     private final KernelClientProperties kernelProperties;
     private final KernelResourceAdapter kernelResourceAdapter;
+    private final EasyRentalProperties easyRentalProperties;
 
     private static final Duration KERNEL_VEHICLE_TIMEOUT = Duration.ofSeconds(12);
 
@@ -72,6 +74,12 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
         return organizationRepository.findById(Objects.requireNonNull(orgId))
                 .switchIfEmpty(Mono.<OrganizationEntity>error(new RuntimeException("Organisation non trouvée")))
                 .flatMap(org -> {
+                    if (kernelProperties.isIntegrationEnabled()
+                            && org.getGovernanceStatus() != null
+                            && !"APPROVED".equalsIgnoreCase(org.getGovernanceStatus())) {
+                        return Mono.error(new RuntimeException(
+                                "ORG_NOT_APPROVED: Organisation must be approved before creating vehicles"));
+                    }
                     if (kernelProperties.isIntegrationEnabled() && org.getKernelOrganizationId() != null) {
                         return createVehicleViaKernel(org, orgId, request);
                     }
@@ -115,6 +123,9 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
     }
 
     private boolean shouldFallbackToLocalVehicle(Throwable ex) {
+        if (!easyRentalProperties.getVehicle().isAllowLocalFallback()) {
+            return false;
+        }
         Throwable current = ex;
         while (current != null) {
             String message = current.getMessage() != null ? current.getMessage() : "";

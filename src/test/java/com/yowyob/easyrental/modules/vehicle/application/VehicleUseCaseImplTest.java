@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.vehicle.application;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelResourceAdapter;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
@@ -68,6 +69,7 @@ class VehicleUseCaseImplTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private KernelClientProperties kernelProperties;
     @Mock private KernelResourceAdapter kernelResourceAdapter;
+    @Mock private EasyRentalProperties easyRentalProperties;
     @InjectMocks private VehicleUseCaseImpl vehicleUseCase;
 
     private UUID categoryId;
@@ -222,6 +224,9 @@ class VehicleUseCaseImplTest {
                 .bearerToken(java.util.Optional.of("token"))
                 .build();
 
+        EasyRentalProperties.Vehicle vehicleProps = new EasyRentalProperties.Vehicle();
+        vehicleProps.setAllowLocalFallback(true);
+        when(easyRentalProperties.getVehicle()).thenReturn(vehicleProps);
         when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
         when(organizationRepository.findById(orgId)).thenReturn(Mono.just(org));
         when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(

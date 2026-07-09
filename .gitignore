@@ -42,6 +42,10 @@ kernel-core.credentials.env
 .env.kernel
 .env.kernel.*
 
+# Local build artefacts — do not commit
+.m2/
+uploads/
+
 projet_complet.txt
 
 project_context.txt
