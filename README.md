@@ -193,7 +193,67 @@ set -a && source kernel-core.credentials.env && set +a
 
 Scripts de validation : `scripts/kernel-validate-login.sh`, `scripts/kernel-bootstrap-org.sh`.
 
+Démarrage local avec Kernel :
+
+```bash
+./scripts/start-local-kernel.sh
+```
+
 Voir aussi : `REFERENCE-INTEGRATION-KERNEL-EASY-RENTAL.md` (racine du dépôt).
+
+#### Attribuer le rôle OWNER (obligatoire pour créer une org)
+
+Le **sign-up** Kernel **n’attribue pas** le rôle `OWNER`. Sans `organizations:write`,
+`POST /api/organizations` échoue (`Access Denied`, souvent remonté en `HTTP_500` dans l’UI).
+L’absence de champ MFA sur l’UI est **normale** si le compte owner n’a pas MFA activée
+(`mfaEnabled=false`) — ce n’est pas la cause du refus de création.
+
+**Procédure concrète (platform-admin) :**
+
+```bash
+cd easy-rental-backend
+set -a && source kernel-core.credentials.env && set +a
+
+# 1) Login admin + MFA (2 étapes)
+./scripts/kernel-validate-login.sh
+./scripts/kernel-validate-login.sh <CODE_EMAIL>
+export ACCESS_TOKEN=$(cat .kernel-access-token)
+
+# 2) Récupérer l’id Kernel de l’utilisateur propriétaire
+#    (après un login owner, ou via GET /api/users/me côté owner)
+#    Exemple : TARGET_USER_ID=77c367d8-28a7-4dc4-943c-cb091fc47120
+export TARGET_USER_ID=<uuid-user-kernel>
+
+# 3) Trouver l’id du rôle OWNER
+curl -sS "$KERNEL_BASE_URL/api/administration/roles" \
+  -H "X-Client-Id: $KERNEL_CLIENT_ID" \
+  -H "X-Api-Key: $KERNEL_API_KEY" \
+  -H "X-Tenant-Id: $KERNEL_TENANT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  | jq -r '.data[] | select(.code=="OWNER") | .id'
+# → OWNER_ROLE_ID (ex. be780ab7-224d-443f-8bb5-1a4379eeaff9)
+
+export OWNER_ROLE_ID=<uuid-role-OWNER>
+
+# 4) Attribuer OWNER (scope TENANT)
+curl -sS -X POST \
+  "$KERNEL_BASE_URL/api/administration/users/$TARGET_USER_ID/roles" \
+  -H "X-Client-Id: $KERNEL_CLIENT_ID" \
+  -H "X-Api-Key: $KERNEL_API_KEY" \
+  -H "X-Tenant-Id: $KERNEL_TENANT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"roleId":"'"$OWNER_ROLE_ID"'","scopeType":"TENANT","scope":"TENANT"}' | jq .
+# Attendu : HTTP 201, success true
+
+# 5) Le propriétaire doit SE RECONNECTER sur l’UI (nouveau JWT avec permissions)
+# 6) Remplir l’onboarding → Activer le dashboard → org en PENDING_APPROVAL
+# 7) Approuver + services :
+export ORGANIZATION_ID=<uuid-org-kernel>
+./scripts/kernel-bootstrap-org.sh
+```
+
+Référence : `RAPPORT-organisation-workflows-api.pdf` §4.2 (devenir OWNER) + §5 (créer / approve).
 
 ---
 
