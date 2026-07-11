@@ -31,6 +31,7 @@ import com.yowyob.easyrental.shared.enums.RentalStatus;
 import com.yowyob.easyrental.shared.enums.RentalType;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import com.yowyob.easyrental.shared.exception.ResourceNotFoundException;
+import com.yowyob.easyrental.shared.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -247,6 +248,19 @@ class RentalUseCaseImplTest {
         StepVerifier.create(rentalUseCase.initiateRental(clientId, request))
                 .expectNextMatches(RentalInitResponse::isAllowed)
                 .verifyComplete();
+    }
+
+    @Test
+    void shouldRejectInitiateRentalWhenStartDateIsInThePast() {
+        UUID clientId = UUID.randomUUID();
+        LocalDateTime start = LocalDateTime.now().minusDays(2);
+        LocalDateTime end = start.plusDays(1);
+        RentalInitRequest request = new RentalInitRequest(
+                vehicleId, null, start, end, RentalType.DAILY, "690000000");
+
+        StepVerifier.create(rentalUseCase.initiateRental(clientId, request))
+                .expectError(ValidationException.class)
+                .verify();
     }
 
     @Test

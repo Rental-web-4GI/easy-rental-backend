@@ -28,11 +28,7 @@ public interface AgencyRepository extends R2dbcRepository<AgencyEntity, UUID> {
             INNER JOIN organizations o ON o.id = a.organization_id
             WHERE COALESCE(a.allow_online_booking, true) = true
               AND (o.subscription_expires_at IS NULL OR o.subscription_expires_at > NOW())
-              AND LENGTH(TRIM(COALESCE(a.name, ''))) >= 3
-              AND (
-                LENGTH(TRIM(COALESCE(a.city, ''))) >= 2
-                OR LENGTH(TRIM(COALESCE(a.address, ''))) >= 5
-              )
+              AND LENGTH(TRIM(COALESCE(a.name, ''))) >= 2
             """)
     Flux<AgencyEntity> findCatalogAgencies();
 }

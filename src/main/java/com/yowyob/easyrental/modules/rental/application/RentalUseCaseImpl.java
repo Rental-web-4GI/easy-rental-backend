@@ -97,7 +97,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
 
     @Transactional
     public Mono<RentalInitResponse> initiateRental(UUID clientId, RentalInitRequest request) {
-        return authUserPort.findById(clientId)
+        return validateRentalWindow(request.startDate(), request.endDate())
+            .then(Mono.defer(() -> authUserPort.findById(clientId)))
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Client not found")))
             .flatMap(client -> vehicleRepository.findById(request.vehicleId())
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Vehicle not found")))
@@ -202,7 +203,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
     // Création directe par l'agence (Walk-in) avec les nouveaux champs
     @Transactional
     public Mono<RentalInitResponse> createAgencyRental(UUID agencyId, AgencyRentalRequest request) {
-        return vehicleRepository.findById(request.vehicleId())
+        return validateRentalWindow(request.startDate(), request.endDate())
+            .then(Mono.defer(() -> vehicleRepository.findById(request.vehicleId())))
             .filter(v -> v.getAgencyId().equals(agencyId))
             .switchIfEmpty(Mono.error(new ResourceNotFoundException(
                     "Vehicle not found or does not belong to this agency")))
@@ -447,5 +449,24 @@ public class RentalUseCaseImpl implements RentalUseCase {
     }
     public Flux<RentalEntity> getOrganizationRentals(UUID orgId) {
         return rentalRepository.findAllByOrganizationIdAndStatusIn(orgId, RENTAL_STATUSES);
+    }
+
+    /**
+     * Rejects bookings whose start is already in the past, or whose end is not after start.
+     * Allows a small grace window so clock skew / form submit latency does not block "now".
+     */
+    private Mono<Void> validateRentalWindow(LocalDateTime startDate, LocalDateTime endDate) {
+        if (startDate == null || endDate == null) {
+            return Mono.error(new ValidationException("Start date and end date are required"));
+        }
+        if (!endDate.isAfter(startDate)) {
+            return Mono.error(new ValidationException("End date must be after start date"));
+        }
+        LocalDateTime earliestAllowed = LocalDateTime.now().minusMinutes(5);
+        if (startDate.isBefore(earliestAllowed)) {
+            return Mono.error(new ValidationException(
+                    "Cannot create a reservation with a start date in the past"));
+        }
+        return Mono.empty();
     }
 }
