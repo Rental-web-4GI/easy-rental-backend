@@ -1,6 +1,10 @@
 package com.yowyob.easyrental.modules.media.application;
 
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelAuthClaims;
+import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelFileAdapter;
 import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -28,7 +32,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +45,8 @@ class MediaUseCaseImplTest {
     @Mock private MediaRepositoryPort mediaRepository;
     @Mock private UserRepositoryPort userRepository;
     @Mock private OrganizationRepositoryPort organizationRepository;
+    @Mock private KernelFileAdapter kernelFileAdapter;
+    @Mock private KernelClientProperties kernelProperties;
     @InjectMocks private MediaUseCaseImpl mediaUseCase;
 
     @Test
@@ -141,6 +150,84 @@ class MediaUseCaseImplTest {
         StepVerifier.create(mediaUseCase.uploadFile(filePart)
                         .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
                 .expectNextMatches(m -> m.getFileUrl().contains("/uploads/"))
+                .verifyComplete();
+    }
+
+    @Test
+    void uploadFile_whenKernelEnabled_uploadsToKernel() throws Exception {
+        Path tempDir = Files.createTempDirectory("upload-kernel-enabled");
+        ReflectionTestUtils.setField(mediaUseCase, "uploadDir", tempDir.toString());
+        ReflectionTestUtils.setField(mediaUseCase, "baseUrl", "http://localhost:8080");
+
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(userId).email("client@test.com")
+                .role("CLIENT").lastname("Dupont").build();
+
+        FilePart filePart = mock(FilePart.class);
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(MediaType.IMAGE_JPEG);
+        when(filePart.filename()).thenReturn("photo.jpg");
+        when(filePart.headers()).thenReturn(partHeaders);
+
+        KernelFileAdapter.KernelFileResult kernelResult =
+                new KernelFileAdapter.KernelFileResult(
+                        "file-uuid-123",
+                        "https://kernel-core.yowyob.com/api/files/file-uuid-123/content",
+                        "photo.jpg");
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(kernelFileAdapter.upload(eq(filePart), any(KernelRequestContext.class)))
+                .thenReturn(Mono.just(kernelResult));
+        when(userRepository.findByEmail("client@test.com")).thenReturn(Mono.just(user));
+        when(mediaRepository.save(any(MediaEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var auth = new UsernamePasswordAuthenticationToken("client@test.com", null);
+
+        KernelRequestContext kernelCtx = KernelRequestContext.builder()
+                .bearerToken(Optional.of("test-token"))
+                .organizationId(Optional.empty())
+                .agencyId(Optional.empty())
+                .build();
+
+        MediaEntity result = mediaUseCase.uploadFile(filePart)
+                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
+                .contextWrite(ctx -> KernelContextHolder.withContext(ctx, kernelCtx))
+                .block();
+
+        assertNotNull(result);
+        assertEquals("https://kernel-core.yowyob.com/api/files/file-uuid-123/content", result.getFileUrl());
+    }
+
+    @Test
+    void uploadFile_whenKernelFails_fallsBackToLocal() throws Exception {
+        Path tempDir = Files.createTempDirectory("upload-kernel-fallback");
+        ReflectionTestUtils.setField(mediaUseCase, "uploadDir", tempDir.toString());
+        ReflectionTestUtils.setField(mediaUseCase, "baseUrl", "http://localhost:8080");
+
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder().id(userId).email("client@test.com")
+                .role("CLIENT").lastname("Doe").build();
+
+        FilePart filePart = mock(FilePart.class);
+        HttpHeaders partHeaders = new HttpHeaders();
+        partHeaders.setContentType(MediaType.IMAGE_JPEG);
+        when(filePart.filename()).thenReturn("doc.jpg");
+        when(filePart.headers()).thenReturn(partHeaders);
+        when(filePart.transferTo(any(Path.class))).thenReturn(Mono.empty());
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(kernelFileAdapter.upload(any(), any())).thenReturn(Mono.error(new RuntimeException("Timeout")));
+        when(userRepository.findByEmail("client@test.com")).thenReturn(Mono.just(user));
+        when(mediaRepository.save(any(MediaEntity.class))).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+
+        var auth = new UsernamePasswordAuthenticationToken("client@test.com", null);
+
+        KernelRequestContext kernelCtx = KernelRequestContext.empty();
+
+        StepVerifier.create(mediaUseCase.uploadFile(filePart)
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
+                        .contextWrite(ctx -> KernelContextHolder.withContext(ctx, kernelCtx)))
+                .expectNextCount(1)
                 .verifyComplete();
     }
 }

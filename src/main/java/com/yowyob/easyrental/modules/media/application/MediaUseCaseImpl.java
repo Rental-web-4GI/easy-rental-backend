@@ -1,6 +1,9 @@
 package com.yowyob.easyrental.modules.media.application;
 
+import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelAuthClaims;
+import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelFileAdapter;
 import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
@@ -46,6 +49,8 @@ public class MediaUseCaseImpl implements MediaUseCase {
     private final MediaRepositoryPort mediaRepository;
     private final UserRepositoryPort userRepository;
     private final OrganizationRepositoryPort organizationRepository;
+    private final KernelFileAdapter kernelFileAdapter;
+    private final KernelClientProperties kernelProperties;
 
     // Crée le dossier au démarrage si inexistant
     @PostConstruct
@@ -61,30 +66,62 @@ public class MediaUseCaseImpl implements MediaUseCase {
         return validateUpload(filePart)
                 .then(resolveCurrentUser())
                 .flatMap(user -> {
-                    Mono<String> prefixMono;
-
-                    if ("ORGANIZATION".equals(user.getRole())) {
-                        prefixMono = organizationRepository.findByOwnerId(user.getId())
-                                .map(org -> sanitizeFilename(org.getName()))
-                                .defaultIfEmpty("org_" + user.getId());
-                    } else if ("STAFF".equals(user.getRole()) && user.getOrganizationId() != null) {
-                        prefixMono = organizationRepository.findById(user.getOrganizationId())
-                                .map(org -> sanitizeFilename(org.getName()))
-                                .defaultIfEmpty("staff_" + user.getId());
-                    } else {
-                        prefixMono = Mono.just("user_" + sanitizeFilename(user.getLastname()));
+                    if (kernelProperties.isIntegrationEnabled()) {
+                        return uploadViaKernel(filePart, user);
                     }
-
-                    return prefixMono.flatMap(prefix -> {
-                        String extension = getFileExtension(filePart.filename());
-                        String uniqueName = prefix + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
-                        Path destinationFile = Paths.get(uploadDir).resolve(uniqueName).toAbsolutePath();
-                        String publicUrl = baseUrl + "/uploads/" + uniqueName;
-
-                        return filePart.transferTo(Objects.requireNonNull(destinationFile))
-                                .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()));
-                    });
+                    return uploadLocal(filePart, user);
                 });
+    }
+
+    private Mono<MediaEntity> uploadViaKernel(FilePart filePart, UserEntity user) {
+        return KernelContextHolder.current()
+                .flatMap(ctx -> kernelFileAdapter.upload(filePart, ctx)
+                        .flatMap(result -> {
+                            String fileUrl = result.url() != null ? result.url() : result.fileId();
+                            MediaEntity media = MediaEntity.builder()
+                                    .id(UUID.randomUUID())
+                                    .filename(result.filename())
+                                    .originalFilename(filePart.filename())
+                                    .fileType(filePart.headers().getContentType() != null
+                                            ? filePart.headers().getContentType().toString()
+                                            : "application/octet-stream")
+                                    .fileUrl(fileUrl)
+                                    .uploaderId(user.getId())
+                                    .createdAt(java.time.LocalDateTime.now())
+                                    .isNewRecord(true)
+                                    .build();
+                            return mediaRepository.save(media);
+                        }))
+                .onErrorResume(ex -> {
+                    log.warn("Kernel file upload failed, falling back to local: {}", ex.getMessage());
+                    return uploadLocal(filePart, user);
+                });
+    }
+
+    private Mono<MediaEntity> uploadLocal(FilePart filePart, UserEntity user) {
+        Mono<String> prefixMono;
+
+        if ("ORGANIZATION".equals(user.getRole())) {
+            prefixMono = organizationRepository.findByOwnerId(user.getId())
+                    .map(org -> sanitizeFilename(org.getName()))
+                    .defaultIfEmpty("org_" + user.getId());
+        } else if ("STAFF".equals(user.getRole()) && user.getOrganizationId() != null) {
+            prefixMono = organizationRepository.findById(user.getOrganizationId())
+                    .map(org -> sanitizeFilename(org.getName()))
+                    .defaultIfEmpty("staff_" + user.getId());
+        } else {
+            prefixMono = Mono.just("user_" + sanitizeFilename(user.getLastname()));
+        }
+
+        return prefixMono.flatMap(prefix -> {
+            String extension = getFileExtension(filePart.filename());
+            String uniqueName = prefix + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
+            Path destinationFile = Paths.get(uploadDir).resolve(uniqueName).toAbsolutePath();
+            String publicUrl = baseUrl + "/uploads/" + uniqueName;
+
+            return filePart.transferTo(Objects.requireNonNull(destinationFile))
+                    .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()));
+        });
     }
 
     private Mono<Void> validateUpload(FilePart filePart) {
