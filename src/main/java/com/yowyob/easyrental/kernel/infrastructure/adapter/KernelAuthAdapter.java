@@ -105,8 +105,10 @@ public class KernelAuthAdapter {
     public Mono<JsonNode> requestEmailVerification(KernelRequestContext context) {
         return kernelWebClient.post()
                 .uri("/api/auth/email-verification/request")
-                .headers(this::applyMachineHeaders)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + context.bearerToken().orElse(""))
+                .headers(headers -> {
+                    this.applyMachineHeaders(headers);
+                    context.bearerToken().ifPresent(token -> headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of())
                 .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
@@ -116,8 +118,10 @@ public class KernelAuthAdapter {
     public Mono<JsonNode> confirmEmailVerification(String verificationToken, KernelRequestContext context) {
         return kernelWebClient.post()
                 .uri("/api/auth/email-verification/confirm")
-                .headers(this::applyMachineHeaders)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + context.bearerToken().orElse(""))
+                .headers(headers -> {
+                    this.applyMachineHeaders(headers);
+                    context.bearerToken().ifPresent(token -> headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("verificationToken", verificationToken))
                 .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
