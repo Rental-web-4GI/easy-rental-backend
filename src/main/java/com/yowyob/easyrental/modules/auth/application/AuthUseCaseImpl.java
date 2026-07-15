@@ -480,6 +480,44 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                 })));
     }
 
+    @Override
+    public Mono<Void> requestEmailVerification() {
+        if (!kernelProperties.isIntegrationEnabled()) {
+            return Mono.empty();
+        }
+        return ReactiveSecurityContextHolder.getContext()
+                .map(ctx -> ctx.getAuthentication().getName())
+                .flatMap(email -> {
+                    String kernelToken = kernelSessionStore.resolve(email)
+                            .orElseThrow(() -> new com.yowyob.easyrental.shared.exception.ValidationException(
+                                    "SESSION_REQUIRED: Connectez-vous avant de demander la vérification email."));
+                    KernelRequestContext ctx = KernelRequestContext.builder()
+                            .bearerToken(java.util.Optional.of(kernelToken))
+                            .build();
+                    return kernelAuthAdapter.requestEmailVerification(ctx);
+                })
+                .then();
+    }
+
+    @Override
+    public Mono<Void> confirmEmailVerification(String verificationToken) {
+        if (!kernelProperties.isIntegrationEnabled()) {
+            return Mono.empty();
+        }
+        return ReactiveSecurityContextHolder.getContext()
+                .map(ctx -> ctx.getAuthentication().getName())
+                .flatMap(email -> {
+                    String kernelToken = kernelSessionStore.resolve(email)
+                            .orElseThrow(() -> new com.yowyob.easyrental.shared.exception.ValidationException(
+                                    "SESSION_REQUIRED: Connectez-vous avant de confirmer la vérification email."));
+                    KernelRequestContext ctx = KernelRequestContext.builder()
+                            .bearerToken(java.util.Optional.of(kernelToken))
+                            .build();
+                    return kernelAuthAdapter.confirmEmailVerification(verificationToken, ctx);
+                })
+                .then();
+    }
+
     private UUID parseUuid(String value) {
         if (value == null || value.isBlank()) {
             return null;

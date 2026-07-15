@@ -35,11 +35,15 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+
+import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import java.util.List;
 
 @ExtendWith(MockitoExtension.class)
 class AuthUseCaseImplTest {
@@ -274,5 +278,35 @@ class AuthUseCaseImplTest {
                 .expectErrorMatches(ex -> ex instanceof ValidationException
                         && ex.getMessage().contains("SESSION_EXPIRED"))
                 .verify();
+    }
+
+    @Test
+    void requestEmailVerification_whenKernelEnabled_callsKernelAdapter() {
+        String email = "client@test.com";
+        String kernelToken = "kernel-access-token";
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(kernelSessionStore.resolve(email)).thenReturn(Optional.of(kernelToken));
+        when(kernelAuthAdapter.requestEmailVerification(any(KernelRequestContext.class)))
+                .thenReturn(Mono.just(org.mockito.Mockito.mock(com.fasterxml.jackson.databind.JsonNode.class)));
+
+        StepVerifier.create(
+                authUseCase.requestEmailVerification()
+                        .contextWrite(ReactiveSecurityContextHolder.withAuthentication(
+                                new UsernamePasswordAuthenticationToken(email, null, List.of())))
+        )
+        .verifyComplete();
+
+        verify(kernelAuthAdapter).requestEmailVerification(any(KernelRequestContext.class));
+    }
+
+    @Test
+    void requestEmailVerification_whenKernelDisabled_completesImmediately() {
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+
+        StepVerifier.create(authUseCase.requestEmailVerification())
+                .verifyComplete();
+
+        verifyNoInteractions(kernelAuthAdapter);
     }
 }

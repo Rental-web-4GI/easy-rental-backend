@@ -22,4 +22,6 @@ public interface AuthUseCase {
     Mono<AuthResponse> refreshToken(String oldToken);
     Mono<RegisterClientResponse> registerClient(RegisterRequest request);
     Mono<OrganizationEntity> registerOrganization(OrgRegisterRequest request);
+    Mono<Void> requestEmailVerification();
+    Mono<Void> confirmEmailVerification(String verificationToken);
 }

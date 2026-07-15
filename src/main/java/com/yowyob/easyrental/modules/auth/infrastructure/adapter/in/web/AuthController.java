@@ -2,6 +2,7 @@ package com.yowyob.easyrental.modules.auth.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
+import com.yowyob.easyrental.modules.auth.dto.EmailVerificationConfirmRequest;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
 import com.yowyob.easyrental.modules.auth.dto.MfaConfirmRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
@@ -69,5 +70,18 @@ public class AuthController {
     public Mono<ResponseEntity<OrganizationEntity>> registerOrganization(@RequestBody OrgRegisterRequest request) {
         return authUseCase.registerOrganization(request)
                 .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/email-verification/request")
+    public Mono<ResponseEntity<Void>> requestEmailVerification() {
+        return authUseCase.requestEmailVerification()
+                .thenReturn(ResponseEntity.<Void>accepted().build());
+    }
+
+    @PostMapping("/email-verification/confirm")
+    public Mono<ResponseEntity<Void>> confirmEmailVerification(
+            @RequestBody EmailVerificationConfirmRequest request) {
+        return authUseCase.confirmEmailVerification(request.verificationToken())
+                .thenReturn(ResponseEntity.<Void>ok().build());
     }
 }

@@ -102,6 +102,28 @@ public class KernelAuthAdapter {
                                 })));
     }
 
+    public Mono<JsonNode> requestEmailVerification(KernelRequestContext context) {
+        return kernelWebClient.post()
+                .uri("/api/auth/email-verification/request")
+                .headers(this::applyMachineHeaders)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + context.bearerToken().orElse(""))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of())
+                .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
+                        .flatMap(KernelResponseSupport::unwrapData));
+    }
+
+    public Mono<JsonNode> confirmEmailVerification(String verificationToken, KernelRequestContext context) {
+        return kernelWebClient.post()
+                .uri("/api/auth/email-verification/confirm")
+                .headers(this::applyMachineHeaders)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + context.bearerToken().orElse(""))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("verificationToken", verificationToken))
+                .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
+                        .flatMap(KernelResponseSupport::unwrapData));
+    }
+
     public Mono<JsonNode> getCurrentUser(KernelRequestContext context) {
         return kernelHttpPort.get("/api/users/me", context);
     }
