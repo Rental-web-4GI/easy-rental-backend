@@ -83,13 +83,12 @@ public class KernelAuthAdapter {
                         .map(data -> KernelLoginResult.authenticated(data.path("accessToken").asText())));
     }
 
-    public Mono<KernelLoginResult> refresh(String kernelAccessToken) {
+    public Mono<KernelLoginResult> refresh(String refreshToken) {
         return kernelWebClient.post()
                 .uri("/api/auth/refresh")
                 .headers(this::applyMachineHeaders)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + kernelAccessToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of())
+                .bodyValue(Map.of("refreshToken", refreshToken))
                 .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
                         .flatMap(body -> KernelResponseSupport.unwrapData(body)
                                 .map(data -> {
