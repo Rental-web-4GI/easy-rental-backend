@@ -538,7 +538,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
         payload.put("lastName", savedUser.getLastname() != null ? savedUser.getLastname() : "");
         payload.put("email", savedUser.getEmail());
         payload.put("thirdPartyType", "CLIENT");
-        return kernelTpAdapter.createClient(payload, ctx)
+        return Mono.defer(() -> kernelTpAdapter.createClient(payload, ctx))
                 .flatMap(kernelData -> {
                     String id = kernelData.path("id").asText(null);
                     if (id != null) {

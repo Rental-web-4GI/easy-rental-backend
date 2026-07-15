@@ -76,6 +76,8 @@ class AuthUseCaseImplTest {
     private com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
     @Mock
     private EasyRentalProperties easyRentalProperties;
+    @Mock
+    private com.yowyob.easyrental.kernel.infrastructure.adapter.KernelTpAdapter kernelTpAdapter;
 
     @InjectMocks
     private AuthUseCaseImpl authUseCase;
