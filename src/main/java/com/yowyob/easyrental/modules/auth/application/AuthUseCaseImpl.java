@@ -168,19 +168,32 @@ public class AuthUseCaseImpl implements AuthUseCase {
 
     @Override
     public Mono<AuthResponse> refreshToken(String oldToken) {
-        if (oldToken.startsWith("Bearer ")) {
+        if (oldToken != null && oldToken.startsWith("Bearer ")) {
             oldToken = oldToken.substring(7);
         }
         if (jwtUtil.validateToken(oldToken)) {
             String email = jwtUtil.getUsernameFromToken(oldToken);
+            String freshLocalToken = userRepository.findByEmail(email)
+                    .map(user -> jwtUtil.generateToken(user.getEmail(), user.getRole()))
+                    .block(); // utilisé seulement pour construire la réponse — OK en sync ici
+            if (kernelProperties.isIntegrationEnabled()) {
+                final String finalEmail = email;
+                return kernelSessionStore.resolve(finalEmail)
+                        .map(Mono::just)
+                        .orElseGet(() -> kernelSessionStore.resolveRefreshToken(finalEmail)
+                                .map(refreshToken -> kernelAuthAdapter.refresh(refreshToken)
+                                        .doOnSuccess(result ->
+                                                kernelSessionStore.store(finalEmail, result.accessToken()))
+                                        .thenReturn("refreshed"))
+                                .orElse(Mono.just("no-kernel-session")))
+                        .then(userRepository.findByEmail(finalEmail))
+                        .map(user -> AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole())));
+            }
             return userRepository.findByEmail(email)
                     .map(user -> AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole())));
         }
-        if (kernelProperties.isIntegrationEnabled()) {
-            return Mono.error(new RuntimeException(
-                    "Session expirée. Veuillez vous reconnecter."));
-        }
-        return Mono.error(new RuntimeException("Invalid Token"));
+        return Mono.error(new com.yowyob.easyrental.shared.exception.ValidationException(
+                "SESSION_EXPIRED: Token invalide ou expiré. Veuillez vous reconnecter."));
     }
 
     private static final String CLIENT_EMAIL_VERIFICATION_MESSAGE =

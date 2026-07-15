@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
+import com.yowyob.easyrental.kernel.infrastructure.dto.KernelLoginResult;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
+import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
@@ -28,7 +30,11 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.verify;
 
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.any;
@@ -154,7 +160,8 @@ class AuthUseCaseImplTest {
         when(jwtUtil.validateToken("bad")).thenReturn(false);
 
         StepVerifier.create(authUseCase.refreshToken("bad"))
-                .expectErrorMatches(e -> e.getMessage().equals("Invalid Token"))
+                .expectErrorMatches(e -> e instanceof ValidationException
+                        && e.getMessage().contains("SESSION_EXPIRED"))
                 .verify();
     }
 
@@ -229,5 +236,43 @@ class AuthUseCaseImplTest {
         StepVerifier.create(authUseCase.registerOrganization(request))
                 .expectNextMatches(org -> org.getName().equals("My Org"))
                 .verifyComplete();
+    }
+
+    @Test
+    void refreshToken_whenLocalTokenValid_andKernelEnabled_andSessionExpired_refreshesKernelToken() {
+        // Arrange
+        String email = "owner@test.com";
+        UserEntity user = UserEntity.builder().id(UUID.randomUUID()).email(email).role("ORGANIZATION").build();
+
+        when(kernelProperties.isIntegrationEnabled()).thenReturn(true);
+        when(jwtUtil.validateToken(anyString())).thenReturn(true);
+        when(jwtUtil.getUsernameFromToken(anyString())).thenReturn(email);
+        when(jwtUtil.generateToken(anyString(), any())).thenReturn("new-local-token");
+        when(userRepository.findByEmail(email)).thenReturn(Mono.just(user));
+        // kernel session expirée (resolve retourne empty)
+        // refresh token disponible
+        when(kernelSessionStore.resolve(email)).thenReturn(Optional.empty());
+        when(kernelSessionStore.resolveRefreshToken(email)).thenReturn(Optional.of("old-refresh-token"));
+        when(kernelAuthAdapter.refresh("old-refresh-token"))
+                .thenReturn(Mono.just(KernelLoginResult.authenticated("new-kernel-token")));
+
+        // Act
+        AuthResponse response = authUseCase.refreshToken("Bearer some-valid-local-token").block();
+
+        // Assert
+        assertNotNull(response);
+        assertNotNull(response.token());
+        verify(kernelSessionStore).store(email, "new-kernel-token");
+    }
+
+    @Test
+    void refreshToken_whenLocalTokenInvalid_throwsValidationException() {
+        when(jwtUtil.validateToken("invalid.token.here")).thenReturn(false);
+
+        // Act & Assert
+        StepVerifier.create(authUseCase.refreshToken("Bearer invalid.token.here"))
+                .expectErrorMatches(ex -> ex instanceof ValidationException
+                        && ex.getMessage().contains("SESSION_EXPIRED"))
+                .verify();
     }
 }

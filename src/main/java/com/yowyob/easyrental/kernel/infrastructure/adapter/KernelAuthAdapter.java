@@ -83,6 +83,25 @@ public class KernelAuthAdapter {
                         .map(data -> KernelLoginResult.authenticated(data.path("accessToken").asText())));
     }
 
+    public Mono<KernelLoginResult> refresh(String kernelAccessToken) {
+        return kernelWebClient.post()
+                .uri("/api/auth/refresh")
+                .headers(this::applyMachineHeaders)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + kernelAccessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of())
+                .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
+                        .flatMap(body -> KernelResponseSupport.unwrapData(body)
+                                .map(data -> {
+                                    String newToken = resolveAccessToken(data);
+                                    if (newToken == null) {
+                                        throw new com.yowyob.easyrental.shared.exception.ValidationException(
+                                                "KERNEL_REFRESH_FAILED: Le refresh du token kernel a échoué.");
+                                    }
+                                    return KernelLoginResult.authenticated(newToken);
+                                })));
+    }
+
     public Mono<JsonNode> getCurrentUser(KernelRequestContext context) {
         return kernelHttpPort.get("/api/users/me", context);
     }
