@@ -173,9 +173,6 @@ public class AuthUseCaseImpl implements AuthUseCase {
         }
         if (jwtUtil.validateToken(oldToken)) {
             String email = jwtUtil.getUsernameFromToken(oldToken);
-            String freshLocalToken = userRepository.findByEmail(email)
-                    .map(user -> jwtUtil.generateToken(user.getEmail(), user.getRole()))
-                    .block(); // utilisé seulement pour construire la réponse — OK en sync ici
             if (kernelProperties.isIntegrationEnabled()) {
                 final String finalEmail = email;
                 return kernelSessionStore.resolve(finalEmail)
@@ -184,6 +181,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                 .map(refreshToken -> kernelAuthAdapter.refresh(refreshToken)
                                         .doOnSuccess(result ->
                                                 kernelSessionStore.store(finalEmail, result.accessToken()))
+                                        .onErrorResume(ex -> Mono.empty())
                                         .thenReturn("refreshed"))
                                 .orElse(Mono.just("no-kernel-session")))
                         .then(userRepository.findByEmail(finalEmail))

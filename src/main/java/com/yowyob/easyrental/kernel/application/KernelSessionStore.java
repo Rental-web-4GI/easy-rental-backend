@@ -62,8 +62,12 @@ public class KernelSessionStore {
         if (email == null || email.isBlank()) {
             return Optional.empty();
         }
-        return Optional.ofNullable(sessions.get(normalize(email)))
-                .map(SessionEntry::refreshToken);
+        String key = normalize(email);
+        SessionEntry entry = sessions.get(key);
+        if (entry == null || entry.expiresAt().isBefore(Instant.now())) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(entry.refreshToken());
     }
 
     public void evict(String email) {
