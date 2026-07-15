@@ -9,6 +9,7 @@ import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
 import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelAuthAdapter;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
+import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelTpAdapter;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -29,6 +30,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,6 +44,7 @@ import reactor.core.publisher.Mono;
  * @author Easy Rental Team
  * @since 2026-06-26
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthUseCaseImpl implements AuthUseCase {
@@ -60,6 +63,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
     private final KernelUserMappingService kernelUserMappingService;
     private final KernelSessionStore kernelSessionStore;
     private final EasyRentalProperties easyRentalProperties;
+    private final KernelTpAdapter kernelTpAdapter;
 
     @Override
     public Mono<AuthResponse> login(LoginRequest request) {
@@ -262,7 +266,10 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .build();
         return userRepository.save(Objects.requireNonNull(user))
                 .doOnSuccess(saved -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
-                        "New client pending email verification: " + saved.getEmail())));
+                        "New client pending email verification: " + saved.getEmail())))
+                .flatMap(saved -> KernelContextHolder.current()
+                        .flatMap(ctx -> syncClientToKernel(saved, ctx))
+                        .thenReturn(saved));
     }
 
     private Mono<UserEntity> applyClientProfile(UserEntity user, RegisterRequest request, UUID kernelUserId) {
@@ -275,7 +282,10 @@ public class AuthUseCaseImpl implements AuthUseCase {
         }
         return userRepository.save(user)
                 .doOnSuccess(saved -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
-                        "New client: " + saved.getEmail())));
+                        "New client: " + saved.getEmail())))
+                .flatMap(saved -> KernelContextHolder.current()
+                        .flatMap(ctx -> syncClientToKernel(saved, ctx))
+                        .thenReturn(saved));
     }
 
     private Mono<RegisterClientResponse> handleExistingClientOnKernelRegister(UserEntity existing) {
@@ -322,6 +332,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
         return userRepository.save(Objects.requireNonNull(user))
                 .doOnSuccess(u -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
                         "New client: " + u.getEmail())))
+                .flatMap(saved -> syncClientToKernel(saved, KernelRequestContext.empty()).thenReturn(saved))
                 .map(u -> new RegisterClientResponse(u, false, CLIENT_REGISTERED_MESSAGE));
     }
 
@@ -516,6 +527,34 @@ public class AuthUseCaseImpl implements AuthUseCase {
                     return kernelAuthAdapter.confirmEmailVerification(verificationToken, ctx);
                 })
                 .then();
+    }
+
+    private Mono<Void> syncClientToKernel(UserEntity savedUser, KernelRequestContext ctx) {
+        if (!kernelProperties.isIntegrationEnabled()) {
+            return Mono.empty();
+        }
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("firstName", savedUser.getFirstname() != null ? savedUser.getFirstname() : "");
+        payload.put("lastName", savedUser.getLastname() != null ? savedUser.getLastname() : "");
+        payload.put("email", savedUser.getEmail());
+        payload.put("thirdPartyType", "CLIENT");
+        return kernelTpAdapter.createClient(payload, ctx)
+                .flatMap(kernelData -> {
+                    String id = kernelData.path("id").asText(null);
+                    if (id != null) {
+                        try {
+                            savedUser.setKernelClientId(UUID.fromString(id));
+                            return userRepository.save(savedUser).then();
+                        } catch (IllegalArgumentException ex) {
+                            return Mono.empty();
+                        }
+                    }
+                    return Mono.empty();
+                })
+                .onErrorResume(ex -> {
+                    log.warn("Kernel tp-core sync failed (best-effort): {}", ex.getMessage());
+                    return Mono.empty();
+                });
     }
 
     private UUID parseUuid(String value) {
