@@ -34,4 +34,9 @@ public interface DriverUseCase {
     Mono<DriverDetailResponseDTO> updateDriverSchedules(UUID id, ScheduleUpdateDTO request);
     Mono<DriverResponseDTO> updateDriverStatus(UUID id, String status);
     Mono<Void> deleteDriver(UUID id);
+
+    Mono<DriverResponseDTO> updateDriverInfo(UUID id,
+            String firstname, String lastname, String tel, Integer age, Integer gender,
+            String cniNumber, String licenseNumber, java.time.LocalDate licenseExpiry, Integer yearsExperience,
+            FilePart profilFile, FilePart cniFile, FilePart licenseFile);
 }

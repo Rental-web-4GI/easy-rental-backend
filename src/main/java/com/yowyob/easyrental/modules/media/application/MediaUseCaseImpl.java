@@ -66,18 +66,31 @@ public class MediaUseCaseImpl implements MediaUseCase {
         return validateUpload(filePart)
                 .then(resolveCurrentUser())
                 .flatMap(user -> {
-                    if (kernelProperties.isIntegrationEnabled()) {
+                    if (kernelProperties.isIntegrationEnabled() && hasKernelMachineCredentials()) {
                         return uploadViaKernel(filePart, user);
+                    }
+                    if (kernelProperties.isIntegrationEnabled()) {
+                        log.warn("Kernel integration enabled but machine credentials missing "
+                                + "(X-Client-Id / X-Api-Key) — falling back to local storage.");
                     }
                     return uploadLocal(filePart, user);
                 });
+    }
+
+    private boolean hasKernelMachineCredentials() {
+        return kernelProperties.getClientId() != null
+                && !kernelProperties.getClientId().isBlank()
+                && kernelProperties.getApiKey() != null
+                && !kernelProperties.getApiKey().isBlank();
     }
 
     private Mono<MediaEntity> uploadViaKernel(FilePart filePart, UserEntity user) {
         return KernelContextHolder.current()
                 .flatMap(ctx -> kernelFileAdapter.upload(filePart, ctx)
                         .flatMap(result -> {
-                            String fileUrl = result.url() != null ? result.url() : result.fileId();
+                            // Save an internal proxy URL so the browser can display the image
+                            // without needing the kernel machine headers.
+                            String fileUrl = baseUrl + "/api/media/kernel-file/" + result.fileId();
                             MediaEntity media = MediaEntity.builder()
                                     .id(UUID.randomUUID())
                                     .filename(result.filename())
@@ -103,25 +116,33 @@ public class MediaUseCaseImpl implements MediaUseCase {
 
         if ("ORGANIZATION".equals(user.getRole())) {
             prefixMono = organizationRepository.findByOwnerId(user.getId())
-                    .map(org -> sanitizeFilename(org.getName()))
+                    .map(org -> sanitizeFilename(org.getName() != null ? org.getName() : "org"))
                     .defaultIfEmpty("org_" + user.getId());
         } else if ("STAFF".equals(user.getRole()) && user.getOrganizationId() != null) {
             prefixMono = organizationRepository.findById(user.getOrganizationId())
-                    .map(org -> sanitizeFilename(org.getName()))
+                    .map(org -> sanitizeFilename(org.getName() != null ? org.getName() : "org"))
                     .defaultIfEmpty("staff_" + user.getId());
         } else {
-            prefixMono = Mono.just("user_" + sanitizeFilename(user.getLastname()));
+            String lastname = user.getLastname() != null ? user.getLastname() : "user";
+            prefixMono = Mono.just("user_" + sanitizeFilename(lastname));
         }
 
-        return prefixMono.flatMap(prefix -> {
-            String extension = getFileExtension(filePart.filename());
-            String uniqueName = prefix + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
-            Path destinationFile = Paths.get(uploadDir).resolve(uniqueName).toAbsolutePath();
-            String publicUrl = baseUrl + "/uploads/" + uniqueName;
+        return prefixMono
+                .doOnNext(prefix -> log.info("[uploadLocal] prefix={}", prefix))
+                .flatMap(prefix -> {
+                    String extension = getFileExtension(filePart.filename());
+                    String uniqueName = prefix + "_" + UUID.randomUUID().toString().substring(0, 8) + extension;
+                    Path destinationFile = Paths.get(uploadDir).resolve(uniqueName).toAbsolutePath();
+                    String publicUrl = baseUrl + "/uploads/" + uniqueName;
+                    log.info("[uploadLocal] writing to {}", destinationFile);
 
-            return filePart.transferTo(Objects.requireNonNull(destinationFile))
-                    .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()));
-        });
+                    return filePart.transferTo(Objects.requireNonNull(destinationFile))
+                            .doOnSuccess(v -> log.info("[uploadLocal] transferTo complete for {}", uniqueName))
+                            .doOnError(ex -> log.error("[uploadLocal] transferTo failed: {}", ex.getMessage(), ex))
+                            .then(saveMediaEntity(filePart, uniqueName, publicUrl, user.getId()))
+                            .doOnSuccess(m -> log.info("[uploadLocal] saved id={} url={}", m.getId(), m.getFileUrl()))
+                            .doOnError(ex -> log.error("[uploadLocal] save failed: {}", ex.getMessage(), ex));
+                });
     }
 
     private Mono<Void> validateUpload(FilePart filePart) {

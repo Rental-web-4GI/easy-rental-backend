@@ -311,6 +311,7 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
                                                         .maxUsers(defaultQuota(request.maxUsers()))
                                                         .hasGeofencing(Boolean.TRUE.equals(request.hasGeofencing()))
                                                         .hasChat(Boolean.TRUE.equals(request.hasChat()))
+                                                        .targetType(normalizeTargetType(request.targetType()))
                                                         .isNewRecord(true)
                                                         .build();
                                         return planRepository.save(plan);
@@ -360,10 +361,21 @@ public class SubscriptionUseCaseImpl implements SubscriptionUseCase {
                 if (update.getHasChat() != null) {
                         existing.setHasChat(update.getHasChat());
                 }
+                if (update.getTargetType() != null && !update.getTargetType().isBlank()) {
+                        existing.setTargetType(normalizeTargetType(update.getTargetType()));
+                }
         }
 
         private int defaultQuota(Integer value) {
                 return value != null ? value : 0;
+        }
+
+        private String normalizeTargetType(String value) {
+                if (value == null || value.isBlank()) {
+                        return "COMPANY";
+                }
+                String upper = value.trim().toUpperCase();
+                return "FREELANCE".equals(upper) ? "FREELANCE" : "COMPANY";
         }
 
         @Override

@@ -47,6 +47,7 @@ public class SecurityConfig {
                             "/api/vehicles/search",
                             "/api/vehicles/agency/*/available",
                             "/uploads/**",
+                            "/api/media/kernel-file/**",
                             "/api/subscriptions/plans/**",
                             "/api/vehicles/categories/all",
                             "/api/agencies/all",

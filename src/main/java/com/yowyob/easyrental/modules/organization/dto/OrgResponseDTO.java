@@ -31,5 +31,6 @@ public record OrgResponseDTO(
     Double yearlyRevenue,
     Boolean isDriverBookingRequired,
     String governanceStatus,
-    UUID kernelOrganizationId
+    UUID kernelOrganizationId,
+    String accountType
 ) {}

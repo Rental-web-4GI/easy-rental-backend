@@ -37,9 +37,14 @@ if [[ -n "$CODE" && -f "$MFA_SESSION" ]]; then
   echo "MFA confirm HTTP: $HTTP_CONFIRM"
   echo "$BODY_CONFIRM" | jq '.' 2>/dev/null || echo "$BODY_CONFIRM"
   ACCESS_TOKEN=$(echo "$BODY_CONFIRM" | jq -r '.data.accessToken // empty')
+  REFRESH_TOKEN=$(echo "$BODY_CONFIRM" | jq -r '.data.refreshToken // .data.sessionToken // empty')
   if [[ -n "$ACCESS_TOKEN" && "$ACCESS_TOKEN" != "null" ]]; then
     rm -f "$MFA_SESSION"
     echo "$ACCESS_TOKEN" > "${SCRIPT_DIR}/../.kernel-access-token"
+    if [[ -n "$REFRESH_TOKEN" && "$REFRESH_TOKEN" != "null" ]]; then
+      echo "$REFRESH_TOKEN" > "${SCRIPT_DIR}/../.kernel-refresh-token"
+      echo "Refresh token sauvegardé dans .kernel-refresh-token"
+    fi
     echo "--- JWT payload (claims) ---"
     echo "$ACCESS_TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq '.'
     echo "--- GET /api/users/me ---"

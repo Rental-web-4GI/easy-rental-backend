@@ -99,6 +99,8 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
                                                             + ")"));
                                         }
                                         Map<String, Object> payload = buildKernelResourcePayload(request);
+                                        // User token OWNER a resources:write si l'organisation est souscrite
+                                        // au service RESOURCE (fait automatiquement à l'onboarding).
                                         return kernelResourceAdapter.createResource(
                                                         org.getKernelOrganizationId(),
                                                         agency.getKernelAgencyId(),
@@ -136,8 +138,15 @@ public class VehicleUseCaseImpl implements VehicleUseCase {
 
     private Map<String, Object> buildKernelResourcePayload(VehicleRequestDTO request) {
         Map<String, Object> payload = new HashMap<>();
-        payload.put("code", request.licencePlate());
-        payload.put("name", request.brand() + " " + request.model());
+        // Champs obligatoires côté kernel /api/resources :
+        // organizationId + agencyId ajoutés par KernelResourceAdapter
+        // resourceCode, name, category, serialNumber = OBLIGATOIRES ici
+        payload.put("resourceCode", request.licencePlate());
+        payload.put("name", (request.brand() + " " + request.model()).trim());
+        payload.put("category", "VEHICLE");
+        String serial = (request.vinNumber() != null && !request.vinNumber().isBlank())
+                ? request.vinNumber() : request.licencePlate();
+        payload.put("serialNumber", serial);
         payload.put("resourceType", "VEHICLE");
         payload.put("active", true);
         return payload;

@@ -22,8 +22,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class KernelOrganizationBootstrapService {
 
+    // ORGANIZATION et SETTINGS sont mandatoires côté kernel (toujours effectifs, pas
+    // souscribables). On ne souscrit que les services métier qu'easy-rental utilise :
+    // - RESOURCE   → véhicules (POST /api/resources)
+    // - COMMERCIAL → clients / tiers (tp-core)
+    // - HRM        → invitation d'employés (staff)
     private static final List<String> DEFAULT_SERVICES = List.of(
-            "ORGANIZATION", "HRM", "SETTINGS", "RESOURCE", "COMMERCIAL");
+            "RESOURCE", "COMMERCIAL", "HRM");
 
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
 

@@ -92,4 +92,8 @@ public class OrganizationEntity implements Persistable<UUID> {
     private UUID kernelOrganizationId;
     @Builder.Default
     private String governanceStatus = "APPROVED";
+
+    // Freelance (individual) vs Company account
+    @Builder.Default
+    private String accountType = "COMPANY";
 }

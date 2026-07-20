@@ -279,6 +279,79 @@ public class DriverUseCaseImpl implements DriverUseCase {
                         .then(updateAgencyDriverStats(driver.getAgencyId(), -1)));
     }
 
+    @Override
+    public Mono<DriverResponseDTO> updateDriverInfo(
+            UUID id,
+            String firstname, String lastname, String tel, Integer age, Integer gender,
+            String cniNumber, String licenseNumber, java.time.LocalDate licenseExpiry,
+            Integer yearsExperience,
+            FilePart profilFile, FilePart cniFile, FilePart licenseFile) {
+        return driverRepository.findById(Objects.requireNonNull(id))
+                .switchIfEmpty(Mono.error(new RuntimeException("Chauffeur introuvable")))
+                .flatMap(driver -> updateDocsIfPresent(profilFile, cniFile, licenseFile)
+                        .flatMap(urls -> {
+                            if (firstname != null && !firstname.isBlank()) {
+                                driver.setFirstname(firstname);
+                            }
+                            if (lastname != null && !lastname.isBlank()) {
+                                driver.setLastname(lastname);
+                            }
+                            if (tel != null && !tel.isBlank()) {
+                                driver.setTel(tel);
+                            }
+                            if (age != null) {
+                                driver.setAge(age);
+                            }
+                            if (gender != null) {
+                                driver.setGender(gender);
+                            }
+                            if (cniNumber != null && !cniNumber.isBlank()) {
+                                driver.setCniNumber(cniNumber);
+                            }
+                            if (licenseNumber != null && !licenseNumber.isBlank()) {
+                                driver.setLicenseNumber(licenseNumber);
+                            }
+                            if (licenseExpiry != null) {
+                                driver.setLicenseExpiry(licenseExpiry);
+                            }
+                            if (yearsExperience != null) {
+                                driver.setYearsExperience(yearsExperience);
+                            }
+                            if (urls.profilUrl() != null) {
+                                driver.setProfilUrl(urls.profilUrl());
+                            }
+                            if (urls.cniUrl() != null) {
+                                driver.setCniUrl(urls.cniUrl());
+                            }
+                            if (urls.licenseUrl() != null) {
+                                driver.setDrivingLicenseUrl(urls.licenseUrl());
+                            }
+                            driver.setUpdatedAt(LocalDateTime.now());
+                            return driverRepository.save(driver);
+                        }))
+                .doOnSuccess(d -> eventPublisher.publishEvent(new AuditEvent("UPDATE_DRIVER", "DRIVER",
+                        "Chauffeur mis à jour : " + d.getFirstname() + " " + d.getLastname())))
+                .flatMap(this::enrichDriver);
+    }
+
+    private Mono<DriverDocumentUrls> updateDocsIfPresent(
+            FilePart profilFile, FilePart cniFile, FilePart licenseFile) {
+        Mono<String> profilMono = profilFile != null
+                ? mediaService.uploadFile(profilFile).map(MediaEntity::getFileUrl)
+                : Mono.justOrEmpty((String) null).defaultIfEmpty("");
+        Mono<String> cniMono = cniFile != null
+                ? mediaService.uploadFile(cniFile).map(MediaEntity::getFileUrl)
+                : Mono.justOrEmpty((String) null).defaultIfEmpty("");
+        Mono<String> licenseMono = licenseFile != null
+                ? mediaService.uploadFile(licenseFile).map(MediaEntity::getFileUrl)
+                : Mono.justOrEmpty((String) null).defaultIfEmpty("");
+        return Mono.zip(profilMono, cniMono, licenseMono)
+                .map(t -> new DriverDocumentUrls(
+                        t.getT1().isEmpty() ? null : t.getT1(),
+                        t.getT2().isEmpty() ? null : t.getT2(),
+                        t.getT3().isEmpty() ? null : t.getT3()));
+    }
+
     private Mono<Void> updateAgencyDriverStats(UUID agencyId, int increment) {
         return agencyRepository.findById(Objects.requireNonNull(agencyId))
                 .flatMap(agency -> {

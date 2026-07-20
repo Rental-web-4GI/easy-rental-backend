@@ -3,9 +3,13 @@ package com.yowyob.easyrental.kernel.infrastructure.adapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
+import com.yowyob.easyrental.kernel.application.KernelAppTokenProvider;
 import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.buffer.DataBuffer;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
@@ -13,6 +17,8 @@ import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
 
 /**
@@ -23,37 +29,98 @@ import reactor.core.publisher.Mono;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class KernelFileAdapter {
 
-    private final WebClient kernelWebClient;
+    private final @Qualifier("kernelFileWebClient") WebClient kernelFileWebClient;
     private final KernelClientProperties kernelProperties;
+    private final KernelAppTokenProvider appTokenProvider;
 
     public record KernelFileResult(String fileId, String url, String filename) {}
 
     public Mono<KernelFileResult> upload(FilePart filePart, KernelRequestContext context) {
-        MultipartBodyBuilder builder = new MultipartBodyBuilder();
-        builder.asyncPart("file", filePart.content(), DataBuffer.class)
-                .filename(filePart.filename())
-                .contentType(filePart.headers().getContentType() != null
-                        ? filePart.headers().getContentType()
-                        : MediaType.APPLICATION_OCTET_STREAM);
+        MediaType contentType = filePart.headers().getContentType() != null
+                ? filePart.headers().getContentType()
+                : MediaType.APPLICATION_OCTET_STREAM;
+        String filename = filePart.filename();
 
-        return kernelWebClient.post()
+        return DataBufferUtils.join(filePart.content())
+                .map(buffer -> {
+                    byte[] bytes = new byte[buffer.readableByteCount()];
+                    buffer.read(bytes);
+                    DataBufferUtils.release(buffer);
+                    return bytes;
+                })
+                .flatMap(bytes -> sendMultipart(bytes, filename, contentType, context));
+    }
+
+    private Mono<KernelFileResult> sendMultipart(byte[] bytes,
+                                                 String filename,
+                                                 MediaType contentType,
+                                                 KernelRequestContext context) {
+        int maxBytes = kernelProperties.getFileUploadMaxBytes();
+        if (bytes.length > maxBytes) {
+            log.warn("[kernel-file] rejected {} ({} bytes > limit {})", filename, bytes.length, maxBytes);
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.PAYLOAD_TOO_LARGE,
+                    "Fichier trop volumineux (" + (bytes.length / 1024 / 1024)
+                            + " Mo). Limite : " + (maxBytes / 1024 / 1024) + " Mo."));
+        }
+        log.info("[kernel-file] uploading {} ({} bytes)", filename, bytes.length);
+        MultipartBodyBuilder builder = new MultipartBodyBuilder();
+        builder.part("file", new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return filename;
+            }
+        }).contentType(contentType);
+
+        return kernelFileWebClient.post()
                 .uri("/api/files")
                 .headers(headers -> {
                     applyMachineHeaders(headers);
-                    context.bearerToken().ifPresent(token ->
-                            headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+                    String bearer = context.bearerToken()
+                            .or(appTokenProvider::currentToken)
+                            .orElse(null);
+                    if (bearer != null) {
+                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
+                    }
                 })
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(builder.build()))
-                .exchangeToMono(response -> response.bodyToMono(JsonNode.class)
+                .exchangeToMono(response -> response.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .flatMap(raw -> {
+                            log.info("[kernel-file] status={} body={}", response.statusCode(), raw);
+                            if (!response.statusCode().is2xxSuccessful()) {
+                                return Mono.error(new RuntimeException(
+                                        "Kernel file upload failed: " + response.statusCode() + " " + raw));
+                            }
+                            if (raw.isEmpty()) {
+                                return Mono.error(new RuntimeException("Kernel returned empty body"));
+                            }
+                            try {
+                                JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw);
+                                return Mono.just(node);
+                            } catch (Exception e) {
+                                return Mono.error(new RuntimeException("Kernel returned non-JSON: " + raw, e));
+                            }
+                        })
                         .flatMap(KernelResponseSupport::unwrapData)
-                        .map(data -> new KernelFileResult(
-                                data.path("id").asText(null),
-                                data.path("url").asText(null),
-                                data.path("filename").asText(filePart.filename())
-                        )));
+                        .map(data -> {
+                            String id = data.path("id").asText(null);
+                            String url = data.path("url").asText(null);
+                            if (url == null && id != null) {
+                                String base = kernelProperties.getBaseUrl();
+                                if (base.endsWith("/")) {
+                                    base = base.substring(0, base.length() - 1);
+                                }
+                                url = base + "/api/files/" + id + "/content";
+                            }
+                            String fallbackName = data.path("filename").asText(filename);
+                            String name = data.path("fileName").asText(fallbackName);
+                            return new KernelFileResult(id, url, name);
+                        }));
     }
 
     private void applyMachineHeaders(HttpHeaders headers) {

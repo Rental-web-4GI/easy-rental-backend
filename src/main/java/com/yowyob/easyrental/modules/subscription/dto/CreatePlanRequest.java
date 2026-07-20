@@ -16,5 +16,6 @@ public record CreatePlanRequest(
         @PositiveOrZero Integer maxAgencies,
         @PositiveOrZero Integer maxUsers,
         Boolean hasGeofencing,
-        Boolean hasChat
+        Boolean hasChat,
+        String targetType
 ) {}

@@ -33,6 +33,9 @@ public class SubscriptionPlanEntity implements Persistable<UUID> {
     private Boolean hasGeofencing = false;
     @Builder.Default
     private Boolean hasChat = false;
+    // Target audience: COMPANY (multi-agences) or FREELANCE (individual)
+    @Builder.Default
+    private String targetType = "COMPANY";
 
     @Transient
     @Builder.Default

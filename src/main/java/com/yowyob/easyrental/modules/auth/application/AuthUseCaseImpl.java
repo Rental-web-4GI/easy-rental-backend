@@ -2,6 +2,7 @@ package com.yowyob.easyrental.modules.auth.application;
 
 import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
+import com.yowyob.easyrental.kernel.application.KernelOwnerAssignmentService;
 import com.yowyob.easyrental.kernel.application.KernelSessionStore;
 import com.yowyob.easyrental.kernel.application.KernelUserMappingService;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
@@ -15,7 +16,10 @@ import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
+import com.yowyob.easyrental.modules.agency.domain.AgencyEntity;
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
+import com.yowyob.easyrental.modules.auth.dto.RegisterFreelanceRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
 import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
@@ -64,6 +68,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
     private final KernelSessionStore kernelSessionStore;
     private final EasyRentalProperties easyRentalProperties;
     private final KernelTpAdapter kernelTpAdapter;
+    private final AgencyRepositoryPort agencyRepository;
+    private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
 
     @Override
     public Mono<AuthResponse> login(LoginRequest request) {
@@ -358,13 +364,38 @@ public class AuthUseCaseImpl implements AuthUseCase {
 
         return kernelAuthAdapter.signUp(signUpPayload)
                 .flatMap(signUpData -> {
+                    UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));
                     String status = signUpData.path("status").asText(null);
+
+                    // Attribuer OWNER au user dès le signup — indispensable pour que
+                    // l'onboarding (POST /api/organizations) fonctionne après verif email.
+                    Mono<Void> ensureOwner = kernelUserId != null
+                            ? kernelOwnerAssignmentService.assignOwnerRole(kernelUserId)
+                            : Mono.empty();
+
                     if ("EMAIL_VERIFICATION_REQUIRED".equals(status)) {
-                        return Mono.error(new ValidationException(
-                                "EMAIL_NOT_VERIFIED: Account created. Check your email to verify before signing in."));
+                        // Créer le user local avec les bons firstname/lastname AVANT de retourner
+                        // l'erreur — sinon au login suivant, un nouveau user est créé depuis le JWT
+                        // qui n'a pas ces champs → fallback sur email.
+                        UserEntity pendingUser = UserEntity.builder()
+                                .id(UUID.randomUUID())
+                                .email(request.email())
+                                .firstname(request.firstname())
+                                .lastname(request.lastname())
+                                .fullname((request.firstname() + " " + request.lastname()).trim())
+                                .role("ORGANIZATION")
+                                .kernelUserId(kernelUserId)
+                                .hiredAt(java.time.LocalDateTime.now())
+                                .isNewRecord(true)
+                                .build();
+                        return userRepository.findByEmail(request.email())
+                                .switchIfEmpty(userRepository.save(pendingUser))
+                                .then(ensureOwner)
+                                .then(Mono.error(new ValidationException(
+                                        "EMAIL_NOT_VERIFIED: Account created. "
+                                                + "Check your email to verify before signing in.")));
                     }
                     String token = signUpData.path("accessToken").asText(null);
-                    UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));
                     UUID kernelActorId = parseUuid(signUpData.path("actorId").asText(null));
                     if (token == null) {
                         return Mono.error(new ValidationException(
@@ -395,6 +426,13 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                                 savedUser.setKernelUserId(kernelUserId);
                                                 savedUser.setKernelActorId(actorId);
                                                 savedUser.setRole("ORGANIZATION");
+                                                // Le sync from token JWT ne récupère pas firstName/lastName
+                                                // (pas dans le token) — les setter explicitement depuis la request
+                                                savedUser.setFirstname(request.firstname());
+                                                savedUser.setLastname(request.lastname());
+                                                savedUser.setFullname((request.firstname() + " "
+                                                        + request.lastname()).trim());
+                                                savedUser.setHiredAt(java.time.LocalDateTime.now());
                                                 return userRepository.save(savedUser);
                                             })
                                             .flatMap(savedUser -> {
@@ -489,6 +527,53 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                                                 "New Org: " + o.getName() + " with plan FREE")));
                                     });
                                 })));
+    }
+
+    @Override
+    public Mono<OrganizationEntity> registerFreelance(RegisterFreelanceRequest request) {
+        String orgName = (request.firstname() + " " + request.lastname()).trim();
+        OrgRegisterRequest orgReq = new OrgRegisterRequest(
+                request.firstname(),
+                request.lastname(),
+                request.email(),
+                request.password(),
+                orgName);
+
+        return registerOrganization(orgReq)
+                .flatMap(org -> markAsFreelance(org, request))
+                .flatMap(org -> createDefaultFreelanceAgency(org, request).thenReturn(org))
+                .doOnSuccess(o -> eventPublisher.publishEvent(new AuditEvent(
+                        "REGISTER_FREELANCE", "AUTH",
+                        "Nouveau freelance: " + o.getName() + " (city=" + request.city() + ")")));
+    }
+
+    private Mono<OrganizationEntity> markAsFreelance(OrganizationEntity org, RegisterFreelanceRequest request) {
+        org.setAccountType("FREELANCE");
+        org.setCity(request.city());
+        org.setPhone(request.phone());
+        if (request.planId() != null) {
+            org.setSubscriptionPlanId(request.planId());
+        }
+        return orgRepository.save(org);
+    }
+
+    private Mono<AgencyEntity> createDefaultFreelanceAgency(OrganizationEntity org, RegisterFreelanceRequest request) {
+        String city = request.city() != null && !request.city().isBlank() ? request.city() : "Principale";
+        // Freelance : l'agence porte le nom du freelance (org et agence représentent la même personne)
+        String freelanceName = (request.firstname() + " " + request.lastname()).trim();
+        AgencyEntity agency = AgencyEntity.builder()
+                .id(UUID.randomUUID())
+                .organizationId(org.getId())
+                .name(freelanceName)
+                .address(city)
+                .city(city)
+                .country("CM")
+                .phone(request.phone())
+                .email(request.email())
+                .managerId(org.getOwnerId())
+                .isNewRecord(true)
+                .build();
+        return agencyRepository.save(Objects.requireNonNull(agency));
     }
 
     @Override

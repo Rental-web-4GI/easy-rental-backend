@@ -6,6 +6,7 @@ import com.yowyob.easyrental.modules.auth.dto.EmailVerificationConfirmRequest;
 import com.yowyob.easyrental.modules.auth.dto.LoginRequest;
 import com.yowyob.easyrental.modules.auth.dto.MfaConfirmRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterClientResponse;
+import com.yowyob.easyrental.modules.auth.dto.RegisterFreelanceRequest;
 import com.yowyob.easyrental.modules.auth.dto.RegisterRequest;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.organization.domain.OrganizationEntity;
@@ -70,6 +71,12 @@ public class AuthController {
     public Mono<ResponseEntity<OrganizationEntity>> registerOrganization(@RequestBody OrgRegisterRequest request) {
         return authUseCase.registerOrganization(request)
                 .map(ResponseEntity::ok);
+    }
+
+    @PostMapping("/register/freelance")
+    public Mono<ResponseEntity<OrganizationEntity>> registerFreelance(@RequestBody RegisterFreelanceRequest request) {
+        return authUseCase.registerFreelance(request)
+                .map(body -> ResponseEntity.status(HttpStatus.CREATED).body(body));
     }
 
     @PostMapping("/email-verification/request")

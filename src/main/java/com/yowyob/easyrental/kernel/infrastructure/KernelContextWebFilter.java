@@ -55,9 +55,12 @@ public class KernelContextWebFilter implements WebFilter {
         }
         String token = bearer.get();
         if (jwtUtil.validateToken(token)) {
+            // Local JWT: only expose the kernel session token if we actually have one.
+            // Never fall back to the local JWT — kernel rejects it (401).
             String email = jwtUtil.getUsernameFromToken(token);
-            return kernelSessionStore.resolve(email).or(() -> bearer);
+            return kernelSessionStore.resolve(email);
         }
+        // Non-local token — caller likely provided a kernel bearer directly
         return bearer;
     }
 

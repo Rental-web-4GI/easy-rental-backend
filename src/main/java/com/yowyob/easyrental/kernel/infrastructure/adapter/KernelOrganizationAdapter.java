@@ -39,6 +39,18 @@ public class KernelOrganizationAdapter {
                 orgContext);
     }
 
+    public Mono<JsonNode> rejectOrganization(UUID organizationId, String reason, KernelRequestContext context) {
+        KernelRequestContext orgContext = KernelRequestContext.builder()
+                .bearerToken(context.bearerToken())
+                .organizationId(java.util.Optional.of(organizationId))
+                .agencyId(context.agencyId())
+                .build();
+        return kernelHttpPort.post(
+                "/api/organizations/" + organizationId + "/reject",
+                Map.of("reason", reason),
+                orgContext);
+    }
+
     public Mono<JsonNode> subscribeService(UUID organizationId, String serviceCode, KernelRequestContext context) {
         KernelRequestContext orgContext = KernelRequestContext.builder()
                 .bearerToken(context.bearerToken())
@@ -110,5 +122,22 @@ public class KernelOrganizationAdapter {
 
     public Mono<JsonNode> createBusinessActor(Map<String, Object> payload, KernelRequestContext context) {
         return kernelHttpPort.post("/api/actors/onboarding", payload, context);
+    }
+
+    public Mono<JsonNode> getMyBusinessActor(KernelRequestContext context) {
+        return kernelHttpPort.get("/api/actors/me", context);
+    }
+
+    /**
+     * Approve/reject un business actor via governance (admin plateforme).
+     * @param businessActorProfileId l'id du profil business actor (pas l'actorId user)
+     * @param action "APPROVE" ou "REJECT"
+     */
+    public Mono<JsonNode> governBusinessActor(
+            UUID businessActorProfileId, String action, String reason, KernelRequestContext context) {
+        return kernelHttpPort.post(
+                "/api/administration/governance/business-actors/" + businessActorProfileId,
+                Map.of("action", action, "reason", reason),
+                context);
     }
 }

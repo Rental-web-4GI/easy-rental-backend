@@ -2,12 +2,14 @@ package com.yowyob.easyrental.kernel.infrastructure.adapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yowyob.easyrental.kernel.application.KernelAppTokenProvider;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
 import com.yowyob.easyrental.kernel.domain.port.out.KernelHttpPort;
 import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -26,11 +28,13 @@ import java.util.UUID;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class KernelWebClientAdapter implements KernelHttpPort {
 
     private final WebClient kernelWebClient;
     private final KernelClientProperties properties;
     private final ObjectMapper objectMapper;
+    private final KernelAppTokenProvider appTokenProvider;
 
     @Override
     public Mono<JsonNode> get(String path, KernelRequestContext context) {
@@ -98,7 +102,9 @@ public class KernelWebClientAdapter implements KernelHttpPort {
         headers.set("X-Client-Id", properties.getClientId());
         headers.set("X-Api-Key", properties.getApiKey());
         headers.set("X-Tenant-Id", properties.getTenantId());
-        context.bearerToken().ifPresent(token -> headers.setBearerAuth(token));
+        context.bearerToken()
+                .or(appTokenProvider::currentToken)
+                .ifPresent(token -> headers.setBearerAuth(token));
         context.organizationId()
                 .map(UUID::toString)
                 .ifPresent(orgId -> headers.set("X-Organization-Id", orgId));
@@ -109,6 +115,10 @@ public class KernelWebClientAdapter implements KernelHttpPort {
 
     private Throwable mapHttpError(WebClientResponseException ex) {
         String body = ex.getResponseBodyAsString();
+        log.warn("[kernel-http] {} response — status={}, body={}",
+                ex.getRequest() != null ? ex.getRequest().getURI() : "?",
+                ex.getStatusCode(),
+                body != null && body.length() > 2000 ? body.substring(0, 2000) + "..." : body);
         try {
             JsonNode node = objectMapper.readTree(body);
             String code = node.path("errorCode").asText("HTTP_" + ex.getStatusCode().value());

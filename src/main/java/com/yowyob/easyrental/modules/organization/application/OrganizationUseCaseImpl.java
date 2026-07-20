@@ -11,8 +11,10 @@ import com.yowyob.easyrental.modules.subscription.domain.port.in.SubscriptionUse
 import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import com.yowyob.easyrental.modules.subscription.dto.SubscriptionResponseDTO;
 import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionPlanRepositoryPort;
+import com.yowyob.easyrental.kernel.application.KernelBusinessActorProvisioningService;
 import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
 import com.yowyob.easyrental.kernel.application.KernelLocalOrganizationLinkService;
+import com.yowyob.easyrental.kernel.application.KernelOwnerAssignmentService;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
 import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
@@ -51,6 +53,8 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
     private final KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
     private final KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
+    private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
+    private final KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -177,12 +181,26 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                         return Mono.error(new ValidationException(
                                 "Missing kernel session. Please sign in again."));
                     }
-                    return Mono.just(ctx);
+                    // Safety-net #1 : attribuer OWNER au user (idempotent).
+                    Mono<Void> ensureOwner = user.getKernelUserId() != null
+                            ? kernelOwnerAssignmentService.assignOwnerRole(user.getKernelUserId())
+                            : Mono.empty();
+                    // Safety-net #2 : créer + approuver le profil business actor si absent.
+                    // Retourne le PROFILE ID (à utiliser comme businessActorId, DIFFÉRENT de l'actorId user).
+                    return ensureOwner.then(
+                            kernelBusinessActorProvisioningService.ensureApprovedBusinessActor(
+                                    ctx, user.getFirstname(), user.getLastname(),
+                                    "ER-" + UUID.randomUUID().toString().substring(0, 8)))
+                            .switchIfEmpty(resolveKernelActorId(user, ctx))
+                            .map(businessActorProfileId -> new Object[]{ctx, businessActorProfileId});
                 })
-                .flatMap(ctx -> planRepository.findByName("FREE")
+                .flatMap(pair -> {
+                    KernelRequestContext ctx = (KernelRequestContext) pair[0];
+                    UUID businessActorProfileId = (UUID) pair[1];
+                    return planRepository.findByName("FREE")
                         .switchIfEmpty(Mono.error(new ValidationException("Plan FREE not configured")))
-                        .flatMap(freePlan -> resolveKernelActorId(user, ctx)
-                                .flatMap(actorId -> {
+                        .flatMap(freePlan -> {
+                                    UUID actorId = businessActorProfileId;
                                     Map<String, Object> orgPayload = new HashMap<>();
                                     orgPayload.put("businessActorId", actorId.toString());
                                     orgPayload.put("code", "ORG-" + UUID.randomUUID().toString()
@@ -233,7 +251,8 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                                                                                 freePlan.getName(), null))
                                                                 .thenReturn(savedOrg));
                                             });
-                                })))
+                                });
+                })
                 .map(orgMapper::toDto);
     }
 

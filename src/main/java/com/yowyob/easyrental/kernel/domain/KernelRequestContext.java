@@ -18,7 +18,19 @@ public record KernelRequestContext(
         Optional<UUID> agencyId
 ) {
 
+    /** Canonical constructor : normalise null → Optional.empty() sur tous les champs. */
+    public KernelRequestContext {
+        bearerToken = bearerToken != null ? bearerToken : Optional.empty();
+        organizationId = organizationId != null ? organizationId : Optional.empty();
+        agencyId = agencyId != null ? agencyId : Optional.empty();
+    }
+
     public static KernelRequestContext empty() {
         return new KernelRequestContext(Optional.empty(), Optional.empty(), Optional.empty());
+    }
+
+    /** Raccourci pour ne set que le bearer, org/agency restent Optional.empty(). */
+    public static KernelRequestContext ofBearer(String token) {
+        return new KernelRequestContext(Optional.ofNullable(token), Optional.empty(), Optional.empty());
     }
 }

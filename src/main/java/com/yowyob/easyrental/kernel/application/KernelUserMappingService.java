@@ -110,6 +110,10 @@ public class KernelUserMappingService {
         if (email != null && !email.isBlank()) {
             user.setEmail(email);
         }
+        // Backfill hiredAt pour les anciens comptes qui n'ont pas de date d'inscription
+        if (user.getHiredAt() == null) {
+            user.setHiredAt(java.time.LocalDateTime.now());
+        }
         if (kernelUser != null) {
             String first = KernelResponseSupport.textOrNull(kernelUser, "firstName");
             String last = KernelResponseSupport.textOrNull(kernelUser, "lastName");

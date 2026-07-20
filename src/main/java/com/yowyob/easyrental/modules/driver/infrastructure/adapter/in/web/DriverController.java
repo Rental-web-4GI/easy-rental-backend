@@ -173,4 +173,33 @@ public class DriverController {
     public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
         return driverUseCase.deleteDriver(id).then(Mono.just(ResponseEntity.noContent().build()));
     }
+
+    @Operation(summary = "Mettre à jour les infos d'un conducteur (multipart, docs optionnels)")
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<DriverResponseDTO>> updateInfo(
+            @PathVariable UUID id,
+            @RequestPart(value = "firstname", required = false) String firstname,
+            @RequestPart(value = "lastname", required = false) String lastname,
+            @RequestPart(value = "tel", required = false) String tel,
+            @RequestPart(value = "age", required = false) String ageStr,
+            @RequestPart(value = "gender", required = false) String genderStr,
+            @RequestPart(value = "cniNumber", required = false) String cniNumber,
+            @RequestPart(value = "licenseNumber", required = false) String licenseNumber,
+            @RequestPart(value = "licenseExpiry", required = false) String licenseExpiryStr,
+            @RequestPart(value = "yearsExperience", required = false) String yearsExperienceStr,
+            @RequestPart(value = "profil", required = false) FilePart profilFile,
+            @RequestPart(value = "cni", required = false) FilePart cniFile,
+            @RequestPart(value = "license", required = false) FilePart licenseFile
+    ) {
+        Integer age = (ageStr != null && !ageStr.isBlank()) ? Integer.parseInt(ageStr) : null;
+        Integer gender = (genderStr != null && !genderStr.isBlank()) ? Integer.parseInt(genderStr) : null;
+        java.time.LocalDate licenseExpiry = (licenseExpiryStr != null && !licenseExpiryStr.isBlank())
+                ? java.time.LocalDate.parse(licenseExpiryStr) : null;
+        Integer yearsExperience = (yearsExperienceStr != null && !yearsExperienceStr.isBlank())
+                ? Integer.parseInt(yearsExperienceStr) : null;
+        return driverUseCase.updateDriverInfo(id, firstname, lastname, tel, age, gender,
+                cniNumber, licenseNumber, licenseExpiry, yearsExperience,
+                profilFile, cniFile, licenseFile).map(ResponseEntity::ok);
+    }
 }
