@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <!--
+      Seed des plans dédiés aux Freelances (particuliers qui louent leur propre véhicule).
+      Contraintes plus légères que les plans COMPANY : une seule agence (auto-créée à
+      l'inscription), moins de véhicules, pas de staff.
+
+      Distingués via subscription_plans.target_type = 'FREELANCE' (COMPANY par défaut).
+    -->
+    <changeSet id="22-seed-freelance-plans" author="easy-rental">
+        <sql>
+            INSERT INTO subscription_plans
+                (id, name, description, price, duration_days,
+                 max_vehicles, max_drivers, max_agencies, max_users,
+                 has_geofencing, has_chat, target_type)
+            VALUES
+            (gen_random_uuid(), 'FREELANCE_FREE',
+             'Freelance — Plan gratuit (1 véhicule)',
+             0.00, 0, 1, 0, 1, 1, false, false, 'FREELANCE'),
+            (gen_random_uuid(), 'FREELANCE_BASIC',
+             'Freelance — Plan Basic mensuel (3 véhicules)',
+             3000.00, 30, 3, 1, 1, 1, false, true, 'FREELANCE'),
+            (gen_random_uuid(), 'FREELANCE_PRO',
+             'Freelance — Plan Pro mensuel (10 véhicules + chauffeurs)',
+             8000.00, 30, 10, 3, 1, 1, true, true, 'FREELANCE')
+            ON CONFLICT (name) DO NOTHING;
+        </sql>
+    </changeSet>
+</databaseChangeLog>

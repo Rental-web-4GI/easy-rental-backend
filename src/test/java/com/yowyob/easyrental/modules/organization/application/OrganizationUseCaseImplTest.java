@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
 import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
-import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
+import com.yowyob.easyrental.kernel.application.KernelBusinessActorProvisioningService;
 import com.yowyob.easyrental.kernel.application.KernelLocalOrganizationLinkService;
+import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
+import com.yowyob.easyrental.kernel.application.KernelOwnerAssignmentService;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -58,6 +60,8 @@ class OrganizationUseCaseImplTest {
     @Mock private KernelOrganizationAdapter kernelOrganizationAdapter;
     @Mock private KernelOrganizationBootstrapService kernelOrganizationBootstrapService;
     @Mock private KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
+    @Mock private KernelOwnerAssignmentService kernelOwnerAssignmentService;
+    @Mock private KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
 
     private OrganizationUseCaseImpl organizationUseCase;
 
@@ -73,7 +77,9 @@ class OrganizationUseCaseImplTest {
                 kernelProperties,
                 kernelOrganizationAdapter,
                 kernelOrganizationBootstrapService,
-                kernelLocalOrganizationLinkService);
+                kernelLocalOrganizationLinkService,
+                kernelOwnerAssignmentService,
+                kernelBusinessActorProvisioningService);
         lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
         lenient().when(kernelLocalOrganizationLinkService.ensureLocalOrganization(any(), any()))
                 .thenReturn(Mono.empty());

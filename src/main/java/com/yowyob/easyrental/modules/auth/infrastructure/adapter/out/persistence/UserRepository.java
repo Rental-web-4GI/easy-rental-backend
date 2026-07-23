@@ -13,6 +13,8 @@ public interface UserRepository extends R2dbcRepository<UserEntity, UUID> {
 
     Mono<UserEntity> findByKernelUserId(UUID kernelUserId);
 
+    Mono<UserEntity> findByKernelPrincipal(String kernelPrincipal);
+
     @Modifying
     @Query("UPDATE users SET organization_id = null, agency_id = null, poste_id = null")
     Mono<Void> clearUserReferences();

@@ -13,6 +13,8 @@ public interface UserRepositoryPort {
 
     Mono<UserEntity> findByKernelUserId(UUID kernelUserId);
 
+    Mono<UserEntity> findByKernelPrincipal(String kernelPrincipal);
+
     Mono<UserEntity> findById(UUID id);
 
     Mono<UserEntity> save(UserEntity user);

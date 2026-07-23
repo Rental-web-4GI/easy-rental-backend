@@ -41,6 +41,13 @@ public class UserEntity implements Persistable<UUID> {
     private UUID kernelActorId;
     private UUID kernelClientId;
 
+    /**
+     * Identifiant de connexion Kernel effectif (username généré côté Kernel).
+     * Différent de l'email affiché : c'est ce champ qui est envoyé à Kernel
+     * lors du login. Vide pour les vieux comptes (fallback sur email).
+     */
+    private String kernelPrincipal;
+
     // Champ technique pour indiquer à R2DBC si c'est un INSERT ou UPDATE
     @Transient
     @Builder.Default

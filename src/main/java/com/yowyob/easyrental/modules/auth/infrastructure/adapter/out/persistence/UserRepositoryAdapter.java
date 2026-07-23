@@ -25,6 +25,11 @@ public class UserRepositoryAdapter implements UserRepositoryPort {
     }
 
     @Override
+    public Mono<UserEntity> findByKernelPrincipal(String kernelPrincipal) {
+        return userRepository.findByKernelPrincipal(kernelPrincipal);
+    }
+
+    @Override
     public Mono<UserEntity> findById(UUID id) {
         return userRepository.findById(id);
     }

@@ -9,6 +9,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,14 +19,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -42,9 +41,8 @@ public class AdminOrganizationController {
     private final KernelAppTokenProvider appTokenProvider;
     private final KernelClientProperties kernelProperties;
     private final OrganizationRepositoryPort orgRepository;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    @Qualifier("kernelWebClient")
+    private final WebClient kernelWebClient;
 
     public record GovernanceRequest(String reason) {}
 
@@ -101,39 +99,33 @@ public class AdminOrganizationController {
 
     private Mono<Boolean> callKernelGovernance(UUID kernelOrgId, String appToken, String reason, boolean approve) {
         String action = approve ? "approve" : "reject";
-        String url = kernelProperties.getBaseUrl();
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-        String finalUrl = url + "/api/organizations/" + kernelOrgId + "/" + action;
-        String jsonBody = "{\"reason\":\"" + reason.replace("\"", "\\\"") + "\"}";
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(finalUrl))
-                .timeout(Duration.ofSeconds(15))
-                .header("X-Client-Id", kernelProperties.getClientId())
-                .header("X-Api-Key", kernelProperties.getApiKey())
-                .header("X-Tenant-Id", kernelProperties.getTenantId())
-                .header("X-Organization-Id", kernelOrgId.toString())
-                .header("Authorization", "Bearer " + appToken)
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-        return Mono.fromCallable(() -> {
-                    HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-                    boolean ok = resp.statusCode() >= 200 && resp.statusCode() < 300;
-                    if (!ok) {
-                        log.warn("[admin-org-http] status={} body={}", resp.statusCode(),
-                                resp.body() != null && resp.body().length() > 300
-                                        ? resp.body().substring(0, 300) + "..." : resp.body());
-                    } else {
-                        log.info("[admin-org-http] {} status={} OK", action, resp.statusCode());
-                    }
-                    return ok;
+        String uri = "/api/organizations/" + kernelOrgId + "/" + action;
+        String safeReason = reason == null ? "" : reason;
+        return kernelWebClient.post()
+                .uri(uri)
+                .headers(h -> {
+                    h.set("X-Client-Id", kernelProperties.getClientId());
+                    h.set("X-Api-Key", kernelProperties.getApiKey());
+                    h.set("X-Tenant-Id", kernelProperties.getTenantId());
+                    h.set(HttpHeaders.AUTHORIZATION, "Bearer " + appToken);
                 })
-                .subscribeOn(Schedulers.boundedElastic())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("reason", safeReason))
+                .exchangeToMono(resp -> resp.bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(body -> {
+                            boolean ok = resp.statusCode().is2xxSuccessful();
+                            if (!ok) {
+                                String preview = body.length() > 300 ? body.substring(0, 300) + "..." : body;
+                                log.warn("[admin-org] {} status={} body={}", action,
+                                        resp.statusCode(), preview);
+                            } else {
+                                log.info("[admin-org] {} status={} OK", action, resp.statusCode());
+                            }
+                            return ok;
+                        }))
                 .onErrorResume(ex -> {
-                    log.error("[admin-org-http] exception : {}", ex.getMessage());
+                    log.error("[admin-org] exception : {}", ex.getMessage());
                     return Mono.just(false);
                 });
     }

@@ -4,6 +4,7 @@ import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.application.KernelOrganizationBootstrapService;
 import com.yowyob.easyrental.kernel.application.KernelOwnerAssignmentService;
 import com.yowyob.easyrental.kernel.application.KernelSessionStore;
+import com.yowyob.easyrental.kernel.application.KernelUsernameGenerator;
 import com.yowyob.easyrental.kernel.application.KernelUserMappingService;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
@@ -122,16 +123,26 @@ public class AuthUseCaseImpl implements AuthUseCase {
     }
 
     private Mono<AuthResponse> kernelLogin(LoginRequest request) {
-        String principal = request.email();
-        return kernelAuthAdapter.login(principal, request.password())
-                .flatMap(result -> {
-                    if (result.mfaRequired()) {
-                        return Mono.just(AuthResponse.mfaRequired(result.mfaToken(), result.mfaChannel()));
-                    }
-                    String token = result.accessToken();
-                    return kernelUserMappingService.syncFromKernelLogin(principal, token)
-                            .map(user -> issueAuthResponse(user, token));
-                });
+        // L'utilisateur saisit son email dans l'UI, mais Kernel attend le username
+        // qu'on a stocké dans kernel_principal au moment du signup. On regarde
+        // d'abord en base locale ; si pas de mapping (compte antérieur au patch),
+        // on tente avec l'email tel quel comme fallback.
+        String email = request.email() == null ? "" : request.email().trim();
+        return userRepository.findByEmail(email)
+                .map(user -> {
+                    String stored = user.getKernelPrincipal();
+                    return stored != null && !stored.isBlank() ? stored : email;
+                })
+                .defaultIfEmpty(email)
+                .flatMap(principal -> kernelAuthAdapter.login(principal, request.password())
+                        .flatMap(result -> {
+                            if (result.mfaRequired()) {
+                                return Mono.just(AuthResponse.mfaRequired(result.mfaToken(), result.mfaChannel()));
+                            }
+                            String token = result.accessToken();
+                            return kernelUserMappingService.syncFromKernelLogin(principal, token)
+                                    .map(user -> issueAuthResponse(user, token));
+                        }));
     }
 
     private AuthResponse issueAuthResponse(UserEntity user, String kernelAccessToken) {
@@ -221,11 +232,15 @@ public class AuthUseCaseImpl implements AuthUseCase {
         return userRepository.findByEmail(request.email())
                 .flatMap(this::handleExistingClientOnKernelRegister)
                 .switchIfEmpty(Mono.defer(() -> {
+                    // Le pattern Kernel exige un username [A-Za-z0-9._-] sans @ :
+                    // envoyer l'email complet fait générer un placeholder pending-<uuid> par Kernel.
+                    String kernelUsername = KernelUsernameGenerator.fromEmail(request.email());
+
                     Map<String, Object> payload = new HashMap<>();
                     payload.put("tenantId", kernelProperties.getTenantId());
                     payload.put("firstName", request.firstname());
                     payload.put("lastName", request.lastname());
-                    payload.put("username", request.email());
+                    payload.put("username", kernelUsername);
                     payload.put("email", request.email());
                     payload.put("password", request.password());
                     payload.put("accountType", "BUSINESS");
@@ -234,9 +249,12 @@ public class AuthUseCaseImpl implements AuthUseCase {
                             .flatMap(signUpData -> {
                                 String status = signUpData.path("status").asText(null);
                                 UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));
+                                // Récupérer le username effectivement retenu par Kernel
+                                // (il peut différer si collision : suffix -2 etc.)
+                                String effectivePrincipal = signUpData.path("username").asText(kernelUsername);
 
                                 if ("EMAIL_VERIFICATION_REQUIRED".equals(status)) {
-                                    return savePendingKernelClient(request, kernelUserId)
+                                    return savePendingKernelClient(request, kernelUserId, effectivePrincipal)
                                             .map(user -> new RegisterClientResponse(
                                                     user,
                                                     true,
@@ -250,7 +268,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                                     + "an access token."));
                                 }
                                 return kernelUserMappingService.syncFromAccessToken(token)
-                                        .flatMap(user -> applyClientProfile(user, request, kernelUserId))
+                                        .flatMap(user -> applyClientProfile(user, request,
+                                                kernelUserId, effectivePrincipal))
                                         .map(user -> new RegisterClientResponse(
                                                 user,
                                                 false,
@@ -259,7 +278,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 }));
     }
 
-    private Mono<UserEntity> savePendingKernelClient(RegisterRequest request, UUID kernelUserId) {
+    private Mono<UserEntity> savePendingKernelClient(RegisterRequest request, UUID kernelUserId,
+                                                     String kernelPrincipal) {
         UserEntity user = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .firstname(request.firstname())
@@ -268,6 +288,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .email(request.email())
                 .role("CLIENT")
                 .kernelUserId(kernelUserId)
+                .kernelPrincipal(kernelPrincipal)
                 .isNewRecord(true)
                 .build();
         return userRepository.save(Objects.requireNonNull(user))
@@ -278,13 +299,17 @@ public class AuthUseCaseImpl implements AuthUseCase {
                         .thenReturn(saved));
     }
 
-    private Mono<UserEntity> applyClientProfile(UserEntity user, RegisterRequest request, UUID kernelUserId) {
+    private Mono<UserEntity> applyClientProfile(UserEntity user, RegisterRequest request, UUID kernelUserId,
+                                                String kernelPrincipal) {
         user.setFirstname(request.firstname());
         user.setLastname(request.lastname());
         user.setFullname(request.firstname() + " " + request.lastname());
         user.setRole("CLIENT");
         if (kernelUserId != null) {
             user.setKernelUserId(kernelUserId);
+        }
+        if (kernelPrincipal != null && !kernelPrincipal.isBlank()) {
+            user.setKernelPrincipal(kernelPrincipal);
         }
         return userRepository.save(user)
                 .doOnSuccess(saved -> eventPublisher.publishEvent(new AuditEvent("REGISTER_CLIENT", "AUTH",
@@ -352,11 +377,16 @@ public class AuthUseCaseImpl implements AuthUseCase {
     }
 
     private Mono<OrganizationEntity> kernelRegisterOrganization(OrgRegisterRequest request) {
+        // Pattern Kernel : username strictement [A-Za-z0-9._-] (pas de @).
+        // Sans ça, Kernel génère silencieusement un placeholder pending-<uuid>
+        // et l'utilisateur ne peut plus se connecter avec son email d'origine.
+        String kernelUsername = KernelUsernameGenerator.fromEmail(request.email());
+
         Map<String, Object> signUpPayload = new HashMap<>();
         signUpPayload.put("tenantId", kernelProperties.getTenantId());
         signUpPayload.put("firstName", request.firstname());
         signUpPayload.put("lastName", request.lastname());
-        signUpPayload.put("username", request.email());
+        signUpPayload.put("username", kernelUsername);
         signUpPayload.put("email", request.email());
         signUpPayload.put("password", request.password());
         signUpPayload.put("accountType", "BUSINESS");
@@ -366,6 +396,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .flatMap(signUpData -> {
                     UUID kernelUserId = parseUuid(signUpData.path("id").asText(null));
                     String status = signUpData.path("status").asText(null);
+                    // Username effectivement retenu par Kernel (peut différer si collision)
+                    String effectivePrincipal = signUpData.path("username").asText(kernelUsername);
 
                     // Attribuer OWNER au user dès le signup — indispensable pour que
                     // l'onboarding (POST /api/organizations) fonctionne après verif email.
@@ -385,6 +417,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                 .fullname((request.firstname() + " " + request.lastname()).trim())
                                 .role("ORGANIZATION")
                                 .kernelUserId(kernelUserId)
+                                .kernelPrincipal(effectivePrincipal)
                                 .hiredAt(java.time.LocalDateTime.now())
                                 .isNewRecord(true)
                                 .build();
@@ -425,6 +458,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                             .flatMap(savedUser -> {
                                                 savedUser.setKernelUserId(kernelUserId);
                                                 savedUser.setKernelActorId(actorId);
+                                                savedUser.setKernelPrincipal(effectivePrincipal);
                                                 savedUser.setRole("ORGANIZATION");
                                                 // Le sync from token JWT ne récupère pas firstName/lastName
                                                 // (pas dans le token) — les setter explicitement depuis la request
