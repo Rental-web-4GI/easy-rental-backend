@@ -455,5 +455,6 @@
     <include file="db/changelog/changes/20-subscription-plan-target-type.xml"/>
     <include file="db/changelog/changes/21-users-kernel-principal.xml"/>
     <include file="db/changelog/changes/22-seed-freelance-plans.xml"/>
+    <include file="db/changelog/changes/23-users-account-type.xml"/>
 
 </databaseChangeLog>

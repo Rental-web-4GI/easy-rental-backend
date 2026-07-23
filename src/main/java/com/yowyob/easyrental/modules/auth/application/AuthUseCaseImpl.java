@@ -220,7 +220,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
     private static final String CLIENT_REGISTERED_MESSAGE = "Compte client cree avec succes.";
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = ValidationException.class)
     public Mono<RegisterClientResponse> registerClient(RegisterRequest request) {
         if (useKernelClientAuth()) {
             return kernelRegisterClient(request);
@@ -368,7 +368,11 @@ public class AuthUseCaseImpl implements AuthUseCase {
     }
 
     @Override
-    @Transactional
+    // EMAIL_NOT_VERIFIED est un ValidationException utilisé pour flow control
+    // (retour d'info à l'UI, pas une vraie erreur). Sans noRollbackFor, la
+    // transaction rollback et le pendingUser saved est perdu — ce qui casse
+    // ensuite le fix accountType='FREELANCE' du registerFreelance.
+    @Transactional(noRollbackFor = ValidationException.class)
     public Mono<OrganizationEntity> registerOrganization(OrgRegisterRequest request) {
         if (kernelProperties.isIntegrationEnabled()) {
             return kernelRegisterOrganization(request);
@@ -574,8 +578,25 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 orgName);
 
         return registerOrganization(orgReq)
+                // Cas nominal (mode local sans vérif email) : org retournée directement.
                 .flatMap(org -> markAsFreelance(org, request))
                 .flatMap(org -> createDefaultFreelanceAgency(org, request).thenReturn(org))
+                // Cas Kernel : registerOrganization jette EMAIL_NOT_VERIFIED avant que l'org
+                // soit créée. On mémorise quand même le flag freelance sur le user pending
+                // pour que l'org, quand elle sera créée à l'onboarding, hérite bien de
+                // accountType='FREELANCE'.
+                .onErrorResume(ValidationException.class, ex -> {
+                    String msg = ex.getMessage() != null ? ex.getMessage() : "";
+                    if (!msg.contains("EMAIL_NOT_VERIFIED")) {
+                        return Mono.error(ex);
+                    }
+                    return userRepository.findByEmail(request.email())
+                            .flatMap(user -> {
+                                user.setAccountType("FREELANCE");
+                                return userRepository.save(user);
+                            })
+                            .then(Mono.error(ex));
+                })
                 .doOnSuccess(o -> eventPublisher.publishEvent(new AuditEvent(
                         "REGISTER_FREELANCE", "AUTH",
                         "Nouveau freelance: " + o.getName() + " (city=" + request.city() + ")")));

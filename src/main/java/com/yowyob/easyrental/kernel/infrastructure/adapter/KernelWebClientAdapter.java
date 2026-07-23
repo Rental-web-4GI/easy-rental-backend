@@ -62,25 +62,50 @@ public class KernelWebClientAdapter implements KernelHttpPort {
     }
 
     private Mono<JsonNode> exchange(String method, String path, Object body, KernelRequestContext context) {
+        return sendRequest(method, path, body, context)
+                // Kernel n'autorise qu'une seule session app active par compte.
+                // Si un autre process (curl externe, scheduled refresh, autre appel) obtient
+                // un nouveau token, l'ancien est immédiatement invalidé → 401.
+                // On force alors un refresh + retente une seule fois avec le token frais.
+                .onErrorResume(WebClientResponseException.class, ex -> {
+                    boolean retryable = ex.getStatusCode().value() == 401
+                            && !context.anonymous()
+                            && context.bearerToken().isPresent();
+                    if (!retryable) {
+                        return Mono.error(ex);
+                    }
+                    log.warn("[kernel-http] 401 on {} {} — refreshing app token and retrying once", method, path);
+                    return appTokenProvider.freshToken()
+                            .flatMap(freshToken -> {
+                                if (freshToken.isEmpty()) {
+                                    return Mono.error(ex);
+                                }
+                                KernelRequestContext retryCtx = KernelRequestContext.builder()
+                                        .bearerToken(freshToken)
+                                        .organizationId(context.organizationId())
+                                        .agencyId(context.agencyId())
+                                        .build();
+                                return sendRequest(method, path, body, retryCtx);
+                            });
+                })
+                .flatMap(KernelResponseSupport::unwrapData)
+                .onErrorMap(WebClientResponseException.class, this::mapHttpError)
+                .onErrorMap(ex -> !(ex instanceof ValidationException), this::mapConnectionError);
+    }
+
+    private Mono<JsonNode> sendRequest(String method, String path, Object body, KernelRequestContext context) {
         WebClient.RequestBodySpec spec = kernelWebClient.method(org.springframework.http.HttpMethod.valueOf(method))
                 .uri(path)
                 .headers(headers -> applyHeaders(headers, context))
                 .accept(MediaType.APPLICATION_JSON);
 
-        Mono<JsonNode> responseMono;
         if (body != null) {
-            responseMono = spec.contentType(MediaType.APPLICATION_JSON)
+            return spec.contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(JsonNode.class);
-        } else {
-            responseMono = spec.retrieve().bodyToMono(JsonNode.class);
         }
-
-        return responseMono
-                .flatMap(KernelResponseSupport::unwrapData)
-                .onErrorMap(WebClientResponseException.class, this::mapHttpError)
-                .onErrorMap(ex -> !(ex instanceof ValidationException), this::mapConnectionError);
+        return spec.retrieve().bodyToMono(JsonNode.class);
     }
 
     private Throwable mapConnectionError(Throwable ex) {
@@ -102,9 +127,15 @@ public class KernelWebClientAdapter implements KernelHttpPort {
         headers.set("X-Client-Id", properties.getClientId());
         headers.set("X-Api-Key", properties.getApiKey());
         headers.set("X-Tenant-Id", properties.getTenantId());
-        context.bearerToken()
-                .or(appTokenProvider::currentToken)
-                .ifPresent(token -> headers.setBearerAuth(token));
+        // Contexte explicitement anonyme (sign-up, login, discover-contexts) :
+        // Kernel refuse ces endpoints publics si un Authorization est envoyé.
+        if (context.anonymous()) {
+            // no bearer, période.
+        } else {
+            context.bearerToken()
+                    .or(appTokenProvider::currentToken)
+                    .ifPresent(token -> headers.setBearerAuth(token));
+        }
         context.organizationId()
                 .map(UUID::toString)
                 .ifPresent(orgId -> headers.set("X-Organization-Id", orgId));

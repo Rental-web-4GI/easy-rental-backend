@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -37,29 +36,36 @@ public class KernelOwnerAssignmentService {
      * bloquer le flow d'inscription — un log warn est émis.</p>
      */
     public Mono<Void> assignOwnerRole(UUID userId) {
-        Optional<String> appToken = appTokenProvider.currentToken();
-        if (appToken.isEmpty()) {
-            log.warn("[owner-assign] app token unavailable — cannot assign OWNER to user {}", userId);
-            return Mono.empty();
-        }
-        KernelRequestContext adminContext = KernelRequestContext.builder()
-                .bearerToken(appToken)
-                .build();
+        // Force un refresh du token app : le cache peut contenir un token
+        // invalidé côté Kernel (réémission de session, expiry non détecté…).
+        // Ce coût réseau supplémentaire évite les 401 silencieux sur admin.
+        return appTokenProvider.freshToken()
+                .flatMap(appToken -> {
+                    if (appToken.isEmpty()) {
+                        log.warn("[owner-assign] app token unavailable — cannot assign OWNER to user {}", userId);
+                        return Mono.empty();
+                    }
+                    KernelRequestContext adminContext = KernelRequestContext.builder()
+                            .bearerToken(appToken)
+                            .build();
 
-        return resolveOwnerRoleId(adminContext)
-                .flatMap(roleId -> {
-                    Map<String, Object> payload = Map.of(
-                            "roleId", roleId.toString(),
-                            "scopeType", "TENANT",
-                            "scope", "TENANT");
-                    return administrationAdapter.assignRole(userId, payload, adminContext)
-                            .doOnSuccess(node -> log.info(
-                                    "[owner-assign] OWNER attribué à user {} (roleId={})", userId, roleId))
-                            .then();
-                })
-                .onErrorResume(ex -> {
-                    log.warn("[owner-assign] échec attribution OWNER user {} : {}", userId, ex.getMessage());
-                    return Mono.empty();
+                    return resolveOwnerRoleId(adminContext)
+                            .flatMap(roleId -> {
+                                Map<String, Object> payload = Map.of(
+                                        "roleId", roleId.toString(),
+                                        "scopeType", "TENANT",
+                                        "scope", "TENANT");
+                                return administrationAdapter.assignRole(userId, payload, adminContext)
+                                        .doOnSuccess(node -> log.info(
+                                                "[owner-assign] OWNER attribué à user {} (roleId={})",
+                                                userId, roleId))
+                                        .then();
+                            })
+                            .onErrorResume(ex -> {
+                                log.warn("[owner-assign] échec attribution OWNER user {} : {}",
+                                        userId, ex.getMessage());
+                                return Mono.empty();
+                            });
                 });
     }
 

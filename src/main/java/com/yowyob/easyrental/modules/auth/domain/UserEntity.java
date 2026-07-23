@@ -48,6 +48,14 @@ public class UserEntity implements Persistable<UUID> {
      */
     private String kernelPrincipal;
 
+    /**
+     * Type de compte prévu pour l'organisation à créer (FREELANCE, COMPANY).
+     * Set au signup freelance et lu au moment de la création effective de
+     * l'organisation (à l'onboarding) pour appliquer le bon accountType.
+     * Reste null pour les signups classiques (COMPANY par défaut).
+     */
+    private String accountType;
+
     // Champ technique pour indiquer à R2DBC si c'est un INSERT ou UPDATE
     @Transient
     @Builder.Default

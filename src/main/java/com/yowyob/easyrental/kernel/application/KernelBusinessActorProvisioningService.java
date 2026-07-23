@@ -10,7 +10,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -115,17 +114,24 @@ public class KernelBusinessActorProvisioningService {
             log.warn("[ba-provision] profileId non-UUID: {}", profileIdStr);
             return Mono.empty();
         }
-        Optional<String> appToken = appTokenProvider.currentToken();
-        if (appToken.isEmpty()) {
-            log.warn("[ba-provision] app token indisponible — impossible d'approuver le business actor {}", profileId);
-            return Mono.empty();
-        }
-        KernelRequestContext adminContext = KernelRequestContext.builder()
-                .bearerToken(appToken)
-                .build();
-        return kernelOrganizationAdapter
-                .governBusinessActor(profileId, "APPROVE", "Auto-approved by easy-rental", adminContext)
-                .doOnSuccess(node -> log.info("[ba-provision] business actor {} APPROVED", profileId))
-                .then();
+        // Force refresh du token app : le cache peut contenir un token
+        // invalidé côté Kernel (401 silencieux sinon).
+        return appTokenProvider.freshToken()
+                .flatMap(appToken -> {
+                    if (appToken.isEmpty()) {
+                        log.warn("[ba-provision] app token indisponible — impossible d'approuver le business actor {}",
+                                profileId);
+                        return Mono.empty();
+                    }
+                    KernelRequestContext adminContext = KernelRequestContext.builder()
+                            .bearerToken(appToken)
+                            .build();
+                    return kernelOrganizationAdapter
+                            .governBusinessActor(profileId, "APPROVE",
+                                    "Auto-approved by easy-rental", adminContext)
+                            .doOnSuccess(node -> log.info(
+                                    "[ba-provision] business actor {} APPROVED", profileId))
+                            .then();
+                });
     }
 }

@@ -142,8 +142,15 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     }
 
     private Mono<OrgResponseDTO> localCompleteOnboarding(UserEntity user, OrgUpdateDTO request) {
-        return planRepository.findByName("FREE")
-                .switchIfEmpty(Mono.error(new ValidationException("Plan FREE not configured")))
+        // Le user peut avoir été marqué FREELANCE au signup (parcours /organisation/freelance-signup)
+        // Sinon accountType='COMPANY' par défaut sur la colonne organisations.
+        String accountType = user.getAccountType() != null && !user.getAccountType().isBlank()
+                ? user.getAccountType()
+                : "COMPANY";
+        // Pour un freelance, on choisit le plan FREELANCE_FREE au lieu de FREE
+        String defaultPlan = "FREELANCE".equalsIgnoreCase(accountType) ? "FREELANCE_FREE" : "FREE";
+        return planRepository.findByName(defaultPlan)
+                .switchIfEmpty(Mono.error(new ValidationException("Plan " + defaultPlan + " not configured")))
                 .flatMap(freePlan -> {
                     OrganizationEntity org = OrganizationEntity.builder()
                             .id(UUID.randomUUID())
@@ -152,6 +159,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                             .subscriptionPlanId(freePlan.getId())
                             .subscriptionAutoRenew(true)
                             .isVerified(false)
+                            .accountType(accountType)
                             .isDriverBookingRequired(
                                     request.isDriverBookingRequired() != null && request.isDriverBookingRequired())
                             .isNewRecord(true)
@@ -197,8 +205,13 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                 .flatMap(pair -> {
                     KernelRequestContext ctx = (KernelRequestContext) pair[0];
                     UUID businessActorProfileId = (UUID) pair[1];
-                    return planRepository.findByName("FREE")
-                        .switchIfEmpty(Mono.error(new ValidationException("Plan FREE not configured")))
+                    // Choix du plan par défaut selon le type de compte du user
+                    String initialPlan = user.getAccountType() != null
+                            && "FREELANCE".equalsIgnoreCase(user.getAccountType())
+                            ? "FREELANCE_FREE" : "FREE";
+                    return planRepository.findByName(initialPlan)
+                        .switchIfEmpty(Mono.error(
+                                new ValidationException("Plan " + initialPlan + " not configured")))
                         .flatMap(freePlan -> {
                                     UUID actorId = businessActorProfileId;
                                     Map<String, Object> orgPayload = new HashMap<>();
@@ -216,6 +229,11 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                                                 String governance = kernelOrg.path("governanceStatus")
                                                         .asText("PENDING_APPROVAL");
 
+                                                // Propager le flag FREELANCE stocké sur le user au signup.
+                                                String accountType = user.getAccountType() != null
+                                                        && !user.getAccountType().isBlank()
+                                                        ? user.getAccountType()
+                                                        : "COMPANY";
                                                 OrganizationEntity org = OrganizationEntity.builder()
                                                         .id(UUID.randomUUID())
                                                         .ownerId(user.getId())
@@ -223,6 +241,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                                                         .subscriptionPlanId(freePlan.getId())
                                                         .subscriptionAutoRenew(true)
                                                         .isVerified(false)
+                                                        .accountType(accountType)
                                                         .isDriverBookingRequired(
                                                                 request.isDriverBookingRequired() != null
                                                                         && request.isDriverBookingRequired())

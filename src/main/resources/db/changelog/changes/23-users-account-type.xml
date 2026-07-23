@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <!--
+      Flag persistant sur le user pour indiquer qu'il vient d'un signup freelance
+      (parcours /organisation/freelance-signup). Cette valeur est lue quand l'org
+      est effectivement créée à l'onboarding, pour appliquer accountType='FREELANCE'
+      à l'org au lieu du 'COMPANY' par défaut.
+    -->
+    <changeSet id="23-users-account-type" author="easy-rental">
+        <addColumn tableName="users">
+            <column name="account_type" type="VARCHAR(20)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

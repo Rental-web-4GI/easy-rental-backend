@@ -44,29 +44,33 @@ public class MediaController {
     @Operation(summary = "Proxy pour télécharger un fichier stocké côté kernel file-core")
     @GetMapping("/kernel-file/{fileId}")
     public Mono<ResponseEntity<byte[]>> proxyKernelFile(@PathVariable String fileId) {
-        log.info("[proxy-kernel-file] fileId={} tokenPresent={}",
-                fileId, appTokenProvider.currentToken().isPresent());
-        return kernelWebClient.get()
-                .uri("/api/files/" + fileId)
-                .headers(headers -> {
-                    headers.set("X-Client-Id", kernelProperties.getClientId());
-                    headers.set("X-Api-Key", kernelProperties.getApiKey());
-                    headers.set("X-Tenant-Id", kernelProperties.getTenantId());
-                    appTokenProvider.currentToken()
-                            .ifPresent(token -> headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
-                })
-                .exchangeToMono(response -> response.bodyToMono(byte[].class)
-                        .defaultIfEmpty(new byte[0])
-                        .map(bytes -> {
-                            MediaType ct = response.headers().contentType()
-                                    .orElse(MediaType.APPLICATION_OCTET_STREAM);
-                            log.info("[proxy-kernel-file] status={} → {} bytes ({})",
-                                    response.statusCode(), bytes.length, ct);
-                            return ResponseEntity.status(response.statusCode())
-                                    .contentType(ct)
-                                    .body(bytes);
-                        }))
-                .doOnError(ex -> log.error("[proxy-kernel-file] error: {}", ex.getMessage(), ex));
+        // Force un refresh du token app : les tokens cachés peuvent être
+        // invalidés côté Kernel sans qu'on le détecte (401 sinon).
+        return appTokenProvider.freshToken()
+                .flatMap(appToken -> {
+                    log.info("[proxy-kernel-file] fileId={} tokenPresent={}", fileId, appToken.isPresent());
+                    return kernelWebClient.get()
+                            .uri("/api/files/" + fileId)
+                            .headers(headers -> {
+                                headers.set("X-Client-Id", kernelProperties.getClientId());
+                                headers.set("X-Api-Key", kernelProperties.getApiKey());
+                                headers.set("X-Tenant-Id", kernelProperties.getTenantId());
+                                appToken.ifPresent(token ->
+                                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+                            })
+                            .exchangeToMono(response -> response.bodyToMono(byte[].class)
+                                    .defaultIfEmpty(new byte[0])
+                                    .map(bytes -> {
+                                        MediaType ct = response.headers().contentType()
+                                                .orElse(MediaType.APPLICATION_OCTET_STREAM);
+                                        log.info("[proxy-kernel-file] status={} → {} bytes ({})",
+                                                response.statusCode(), bytes.length, ct);
+                                        return ResponseEntity.status(response.statusCode())
+                                                .contentType(ct)
+                                                .body(bytes);
+                                    }))
+                            .doOnError(ex -> log.error("[proxy-kernel-file] error: {}", ex.getMessage(), ex));
+                });
     }
 
     // DTO simple pour la réponse

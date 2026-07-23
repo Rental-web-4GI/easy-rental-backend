@@ -132,7 +132,10 @@ public class KernelAuthAdapter {
     }
 
     public Mono<JsonNode> signUp(Map<String, Object> payload) {
-        return kernelHttpPort.post("/api/auth/sign-up", payload, KernelRequestContext.empty());
+        // sign-up est un endpoint public : Kernel refuse (401 vide) si un
+        // Authorization est envoyé. On utilise le contexte anonyme pour
+        // empêcher le fallback sur le token app platform-admin.
+        return kernelHttpPort.post("/api/auth/sign-up", payload, KernelRequestContext.publicEndpoint());
     }
 
     private void applyMachineHeaders(HttpHeaders headers) {
