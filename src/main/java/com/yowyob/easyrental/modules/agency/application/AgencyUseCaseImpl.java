@@ -288,12 +288,12 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     }
 
     public Flux<AgencyResponseDTO> getAllAgencies() {
-        return agencyRepository.findCatalogAgencies().map(agencyMapper::toDto);
+        return agencyRepository.findCatalogAgencies().flatMap(this::toDtoWithAccountType, 16);
     }
 
     public Mono<AgencyResponseDTO> getAgency(UUID id) {
         return agencyRepository.findById(Objects.requireNonNull(id))
-                .map(agencyMapper::toDto)
+                .flatMap(this::toDtoWithAccountType)
                 .switchIfEmpty(Mono.error(new RuntimeException("Agence non trouvée")));
     }
 
@@ -302,7 +302,16 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
         return agencyRepository.searchAgencies(
                 keyword != null && !keyword.isBlank() ? keyword : null,
                 city != null && !city.isBlank() ? city : null
-        ).map(agencyMapper::toDto);
+        ).flatMap(this::toDtoWithAccountType, 16);
+    }
+
+    private Mono<AgencyResponseDTO> toDtoWithAccountType(AgencyEntity agency) {
+        if (agency.getOrganizationId() == null) {
+            return Mono.just(agencyMapper.toDto(agency, null));
+        }
+        return organizationRepository.findById(agency.getOrganizationId())
+                .map(org -> agencyMapper.toDto(agency, org.getAccountType()))
+                .defaultIfEmpty(agencyMapper.toDto(agency, null));
     }
 
     @Transactional

@@ -7,6 +7,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgencyMapper {
     public AgencyResponseDTO toDto(AgencyEntity entity) {
+        return toDto(entity, null);
+    }
+
+    public AgencyResponseDTO toDto(AgencyEntity entity, String organizationAccountType) {
         if (entity == null) {
             return null;
         }
@@ -16,14 +20,14 @@ public class AgencyMapper {
             entity.getName(),
             entity.getDescription(),
             entity.getAddress(),
-            entity.getAliasAddress(), 
+            entity.getAliasAddress(),
             entity.getCity(),
-            entity.getCountry(), 
-            entity.getPostalCode(), 
-            entity.getRegion(), 
+            entity.getCountry(),
+            entity.getPostalCode(),
+            entity.getRegion(),
             entity.getLatitude(),
-            entity.getLongitude(),  
-            entity.getGeofenceRadius(),  
+            entity.getLongitude(),
+            entity.getGeofenceRadius(),
             entity.getEmail(),
             entity.getPhone(),
             entity.getManagerId(),
@@ -37,7 +41,8 @@ public class AgencyMapper {
             entity.getSecondaryColor(),
             entity.getTotalVehicles(),
             entity.getTotalRentals(),
-            entity.getMonthlyRevenue()
+            entity.getMonthlyRevenue(),
+            organizationAccountType
         );
     }
 }
