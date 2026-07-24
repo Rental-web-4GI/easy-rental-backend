@@ -460,5 +460,11 @@
     <include file="db/changelog/changes/25-loyalty-ledger.xml"/>
     <include file="db/changelog/changes/26-ratings.xml"/>
     <include file="db/changelog/changes/27-audit-metadata-text.xml"/>
+    <include file="db/changelog/changes/28-rental-pricing-tracking-fields.xml"/>
+    <include file="db/changelog/changes/29-payment-portions.xml"/>
+    <include file="db/changelog/changes/30-agency-escrow.xml"/>
+    <include file="db/changelog/changes/31-inspections.xml"/>
+    <include file="db/changelog/changes/32-inspection-items.xml"/>
+    <include file="db/changelog/changes/33-rental-positions.xml"/>
 
 </databaseChangeLog>
