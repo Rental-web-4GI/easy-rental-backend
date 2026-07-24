@@ -553,4 +553,25 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                 .flatMap(plan -> organizationRepository.findById(orgId)
                         .flatMap(subscriptionUseCase::buildSubscriptionResponse));
     }
+
+    public Mono<OrganizationEntity> upgradeToCompany(UUID userId) {
+        return organizationRepository.findByOwnerId(userId)
+                .switchIfEmpty(Mono.error(new ValidationException("Organisation introuvable pour l'utilisateur")))
+                .flatMap(org -> {
+                    if (org.getAccountType() != null && "COMPANY".equalsIgnoreCase(org.getAccountType())) {
+                        return Mono.just(org);
+                    }
+                    org.setAccountType("COMPANY");
+                    return organizationRepository.save(org);
+                });
+    }
+
+    @Override
+    public Mono<OrgResponseDTO> upgradeToCompanyForCurrentUser() {
+        return ReactiveSecurityContextHolder.getContext()
+                .flatMap(ctx -> resolveCurrentUser(ctx.getAuthentication()))
+                .switchIfEmpty(Mono.error(new ValidationException("Utilisateur non authentifié")))
+                .flatMap(user -> upgradeToCompany(user.getId()))
+                .map(orgMapper::toDto);
+    }
 }
