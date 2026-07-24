@@ -459,5 +459,6 @@
     <include file="db/changelog/changes/24-audit-events.xml"/>
     <include file="db/changelog/changes/25-loyalty-ledger.xml"/>
     <include file="db/changelog/changes/26-ratings.xml"/>
+    <include file="db/changelog/changes/27-audit-metadata-text.xml"/>
 
 </databaseChangeLog>
