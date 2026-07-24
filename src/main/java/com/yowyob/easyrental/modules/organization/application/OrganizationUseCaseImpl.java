@@ -22,6 +22,7 @@ import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
 import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -57,6 +58,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
     private final KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
     private final AgencyRepositoryPort agencyRepositoryPort;
+    private final AuditUseCase auditUseCase;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -563,6 +565,14 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                     }
                     org.setAccountType("COMPANY");
                     return organizationRepository.save(org);
+                })
+                // Le record d'audit reste hors de la gestion d'erreur de la chaîne réactive :
+                // il ne se déclenche que sur succès (doOnSuccess), jamais sur échec.
+                .doOnSuccess(org -> {
+                    if (org != null) {
+                        auditUseCase.record(userId, "UPGRADE_TO_COMPANY", "ORGANIZATION", org.getId(),
+                                null, null, null).subscribe();
+                    }
                 });
     }
 

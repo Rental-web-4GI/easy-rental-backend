@@ -3,6 +3,7 @@ package com.yowyob.easyrental.modules.organization.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.domain.KernelRequestContext;
 import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
@@ -64,6 +65,7 @@ class OrganizationUseCaseImplTest {
     @Mock private KernelOwnerAssignmentService kernelOwnerAssignmentService;
     @Mock private KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
     @Mock private AgencyRepositoryPort agencyRepositoryPort;
+    @Mock private AuditUseCase auditUseCase;
 
     private OrganizationUseCaseImpl organizationUseCase;
 
@@ -82,7 +84,8 @@ class OrganizationUseCaseImplTest {
                 kernelLocalOrganizationLinkService,
                 kernelOwnerAssignmentService,
                 kernelBusinessActorProvisioningService,
-                agencyRepositoryPort);
+                agencyRepositoryPort,
+                auditUseCase);
         lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
         lenient().when(kernelLocalOrganizationLinkService.ensureLocalOrganization(any(), any()))
                 .thenReturn(Mono.empty());

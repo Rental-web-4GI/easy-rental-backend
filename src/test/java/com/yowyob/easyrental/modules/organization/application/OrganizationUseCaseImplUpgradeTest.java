@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.organization.application;
 
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.application.KernelBusinessActorProvisioningService;
 import com.yowyob.easyrental.kernel.application.KernelLocalOrganizationLinkService;
@@ -45,6 +46,7 @@ class OrganizationUseCaseImplUpgradeTest {
     @Mock private KernelOwnerAssignmentService kernelOwnerAssignmentService;
     @Mock private KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
     @Mock private AgencyRepositoryPort agencyRepositoryPort;
+    @Mock private AuditUseCase auditUseCase;
 
     private OrganizationUseCaseImpl useCase;
     private final UUID userId = UUID.randomUUID();
@@ -64,7 +66,10 @@ class OrganizationUseCaseImplUpgradeTest {
                 kernelLocalOrganizationLinkService,
                 kernelOwnerAssignmentService,
                 kernelBusinessActorProvisioningService,
-                agencyRepositoryPort);
+                agencyRepositoryPort,
+                auditUseCase);
+        org.mockito.Mockito.lenient().when(auditUseCase.record(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(Mono.empty());
     }
 
     @Test
