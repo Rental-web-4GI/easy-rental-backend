@@ -456,5 +456,8 @@
     <include file="db/changelog/changes/21-users-kernel-principal.xml"/>
     <include file="db/changelog/changes/22-seed-freelance-plans.xml"/>
     <include file="db/changelog/changes/23-users-account-type.xml"/>
+    <include file="db/changelog/changes/24-audit-events.xml"/>
+    <include file="db/changelog/changes/25-loyalty-ledger.xml"/>
+    <include file="db/changelog/changes/26-ratings.xml"/>
 
 </databaseChangeLog>
