@@ -89,9 +89,23 @@ public class AuthUseCaseImpl implements AuthUseCase {
     }
 
     private void auditLoginFailed(LoginRequest request) {
-        String email = request.email() == null ? "" : request.email().trim();
-        String metadata = "{\"email\":\"" + email.replace("\"", "\\\"") + "\"}";
-        auditUseCase.record(null, "LOGIN_FAILED", null, null, null, null, metadata).subscribe();
+        auditUseCase.record(null, "LOGIN_FAILED", null, null, null, null, buildLoginMetadata(request, null))
+                .subscribe();
+    }
+
+    private String buildLoginMetadata(LoginRequest request, String role) {
+        String email = (request == null || request.email() == null) ? "" : request.email().trim();
+        String source = (request == null || request.source() == null) ? "" : request.source().trim().toUpperCase();
+        StringBuilder sb = new StringBuilder("{\"email\":\"")
+                .append(email.replace("\"", "\\\""))
+                .append("\"");
+        if (!source.isBlank()) {
+            sb.append(",\"source\":\"").append(source.replace("\"", "\\\"")).append("\"");
+        }
+        if (role != null && !role.isBlank()) {
+            sb.append(",\"role\":\"").append(role).append("\"");
+        }
+        return sb.append("}").toString();
     }
 
     private Mono<AuthResponse> tryLocalAdminLogin(LoginRequest request) {
@@ -117,8 +131,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .filter(user -> passwordEncoder.matches(request.password(), user.getPassword()))
                 .map(user -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", auditPrefix + user.getEmail()));
-                    auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null, null)
-                            .subscribe();
+                    auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                            buildLoginMetadata(request, role)).subscribe();
                     return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
                 });
     }
@@ -132,7 +146,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
     public Mono<AuthResponse> confirmMfa(String mfaToken, String code) {
         return kernelAuthAdapter.confirmMfa(mfaToken, code)
                 .flatMap(result -> kernelUserMappingService.syncFromAccessToken(result.accessToken())
-                        .map(user -> issueAuthResponse(user, result.accessToken())));
+                        .map(user -> issueAuthResponse(user, result.accessToken(), null)));
     }
 
     private Mono<AuthResponse> kernelLogin(LoginRequest request) {
@@ -154,12 +168,13 @@ public class AuthUseCaseImpl implements AuthUseCase {
                             }
                             String token = result.accessToken();
                             return kernelUserMappingService.syncFromKernelLogin(principal, token)
-                                    .map(user -> issueAuthResponse(user, token));
+                                    .map(user -> issueAuthResponse(user, token, request));
                         }));
     }
 
-    private AuthResponse issueAuthResponse(UserEntity user, String kernelAccessToken) {
-        auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null, null).subscribe();
+    private AuthResponse issueAuthResponse(UserEntity user, String kernelAccessToken, LoginRequest request) {
+        auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                buildLoginMetadata(request, user.getRole())).subscribe();
         if ("ORGANIZATION".equalsIgnoreCase(user.getRole())) {
             kernelSessionStore.store(user.getEmail(), kernelAccessToken);
             return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
@@ -173,7 +188,8 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .filter(u -> u.getPassword() != null && passwordEncoder.matches(request.password(), u.getPassword()))
                 .map(u -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", "User logged in: " + u.getEmail()));
-                    auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null, null).subscribe();
+                    auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null,
+                            buildLoginMetadata(request, u.getRole())).subscribe();
                     return AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole()));
                 })
                 .switchIfEmpty(Mono.error(new RuntimeException("Bad credentials")));
