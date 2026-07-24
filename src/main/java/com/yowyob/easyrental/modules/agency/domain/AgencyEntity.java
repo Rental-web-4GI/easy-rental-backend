@@ -10,6 +10,7 @@ import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Table;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Data
@@ -78,6 +79,9 @@ public class AgencyEntity implements Persistable<UUID> {
     private Integer totalRentals = 0;
     @Builder.Default
     private Double monthlyRevenue = 0.0;
+
+    @Builder.Default
+    private BigDecimal cautionEscrowBalance = BigDecimal.ZERO;
 
     private UUID kernelAgencyId;
 
