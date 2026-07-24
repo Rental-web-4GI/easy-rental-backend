@@ -4,7 +4,9 @@ import com.yowyob.easyrental.modules.statistics.dto.AgencyStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.FullDashboardDTO;
 import com.yowyob.easyrental.modules.statistics.dto.OrgStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.PlatformStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO;
 import java.util.UUID;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -20,4 +22,6 @@ public interface StatisticsUseCase {
     Mono<OrgStatsDTO> getOrganizationStats(UUID orgId, int year);
 
     Mono<PlatformStatsDTO> getPlatformStats();
+
+    Flux<SubscriptionBillingDTO> listActiveSubscriptionsBilling();
 }

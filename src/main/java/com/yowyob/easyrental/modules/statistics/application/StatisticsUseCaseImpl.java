@@ -452,4 +452,40 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                         t.getT1(), t.getT2(), t.getT3(), t.getT4(), t.getT5(), t.getT6()
                 ));
     }
+
+    @Override
+    public reactor.core.publisher.Flux<com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO>
+            listActiveSubscriptionsBilling() {
+        String sql = """
+                SELECT s.id            AS subscription_id,
+                       s.organization_id,
+                       o.name          AS organization_name,
+                       o.email         AS organization_email,
+                       o.account_type,
+                       s.plan_type,
+                       p.price,
+                       s.status,
+                       s.start_date,
+                       s.end_date
+                FROM subscriptions s
+                JOIN organizations o        ON o.id   = s.organization_id
+                LEFT JOIN subscription_plans p ON p.name = s.plan_type
+                WHERE s.status = 'ACTIVE'
+                ORDER BY p.price DESC NULLS LAST, s.start_date DESC
+                """;
+        return databaseClient.sql(sql)
+                .map((row, meta) -> new com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO(
+                        row.get("subscription_id", java.util.UUID.class),
+                        row.get("organization_id", java.util.UUID.class),
+                        row.get("organization_name", String.class),
+                        row.get("organization_email", String.class),
+                        row.get("account_type", String.class),
+                        row.get("plan_type", String.class),
+                        row.get("price", java.math.BigDecimal.class),
+                        row.get("status", String.class),
+                        row.get("start_date", java.time.LocalDateTime.class),
+                        row.get("end_date", java.time.LocalDateTime.class)
+                ))
+                .all();
+    }
 }

@@ -50,7 +50,7 @@ public record PlatformStatsDTO(
     ) {}
 
     public record RevenueSummary(
-            BigDecimal subscriptionsMonthlyMRR,
+            BigDecimal monthlyRecurringRevenue,
             long subscriptionsActiveCount
     ) {}
 }

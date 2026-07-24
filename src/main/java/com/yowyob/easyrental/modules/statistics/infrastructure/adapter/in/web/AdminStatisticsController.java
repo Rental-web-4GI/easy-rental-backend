@@ -2,6 +2,7 @@ package com.yowyob.easyrental.modules.statistics.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.statistics.domain.port.in.StatisticsUseCase;
 import com.yowyob.easyrental.modules.statistics.dto.PlatformStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -32,5 +34,12 @@ public class AdminStatisticsController {
     @PreAuthorize("hasRole('ADMIN')")
     public Mono<PlatformStatsDTO> getPlatformStats() {
         return statisticsUseCase.getPlatformStats();
+    }
+
+    @Operation(summary = "Facturation : lister les abonnements actifs avec org, plan et prix")
+    @GetMapping("/billing/subscriptions")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Flux<SubscriptionBillingDTO> listActiveSubscriptionsBilling() {
+        return statisticsUseCase.listActiveSubscriptionsBilling();
     }
 }

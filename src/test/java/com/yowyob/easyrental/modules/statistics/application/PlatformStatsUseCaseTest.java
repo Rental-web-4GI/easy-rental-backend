@@ -70,7 +70,7 @@ class PlatformStatsUseCaseTest {
 
         // Subscriptions : une seule souscription active, plan à 5000
         when(subscriptionRepository.sumActivePlanPrices()).thenReturn(Mono.just(BigDecimal.valueOf(5000)));
-        when(subscriptionRepository.countByStatus("ACTIVE")).thenReturn(Mono.just(1L));
+        when(subscriptionRepository.countActiveOrganizations()).thenReturn(Mono.just(1L));
 
         StepVerifier.create(statisticsUseCase.getPlatformStats())
                 .assertNext(stats -> {
@@ -102,7 +102,7 @@ class PlatformStatsUseCaseTest {
                     org.assertj.core.api.Assertions.assertThat(stats.rentals().monthlyCompleted()).isEqualTo(15L);
 
                     // Revenue : MRR = 5000, 1 abonnement actif
-                    org.assertj.core.api.Assertions.assertThat(stats.revenue().subscriptionsMonthlyMRR())
+                    org.assertj.core.api.Assertions.assertThat(stats.revenue().monthlyRecurringRevenue())
                             .isEqualByComparingTo(BigDecimal.valueOf(5000));
                     org.assertj.core.api.Assertions.assertThat(stats.revenue().subscriptionsActiveCount())
                             .isEqualTo(1L);
@@ -134,12 +134,12 @@ class PlatformStatsUseCaseTest {
         when(rentalRepository.countCompletedThisMonth()).thenReturn(Mono.just(0L));
 
         when(subscriptionRepository.sumActivePlanPrices()).thenReturn(Mono.just(BigDecimal.ZERO));
-        when(subscriptionRepository.countByStatus("ACTIVE")).thenReturn(Mono.just(0L));
+        when(subscriptionRepository.countActiveOrganizations()).thenReturn(Mono.just(0L));
 
         StepVerifier.create(statisticsUseCase.getPlatformStats())
                 .assertNext(stats -> {
                     org.assertj.core.api.Assertions.assertThat(stats.agencies().averagePerCompany()).isEqualTo(0.0);
-                    org.assertj.core.api.Assertions.assertThat(stats.revenue().subscriptionsMonthlyMRR())
+                    org.assertj.core.api.Assertions.assertThat(stats.revenue().monthlyRecurringRevenue())
                             .isEqualByComparingTo(BigDecimal.ZERO);
                 })
                 .verifyComplete();
