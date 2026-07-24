@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.organization.application;
 
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
 import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
 import com.yowyob.easyrental.modules.organization.dto.OrgResponseDTO;
@@ -55,6 +56,7 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
     private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
     private final KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
+    private final AgencyRepositoryPort agencyRepositoryPort;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -468,8 +470,20 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                     .switchIfEmpty(Mono.defer(() -> kernelLocalOrganizationLinkService
                             .ensureLocalOrganization(user, null)))
                     .flatMap(this::syncGovernanceFromKernelIfNeeded)
-                    .map(org -> new OrgUserResponseDTO(user, orgMapper.toDto(org)))
-                    .defaultIfEmpty(new OrgUserResponseDTO(user, null)));
+                    .flatMap(org -> buildOrgUserResponse(user, org))
+                    .defaultIfEmpty(new OrgUserResponseDTO(user, null, null)));
+    }
+
+    private Mono<OrgUserResponseDTO> buildOrgUserResponse(UserEntity user, OrganizationEntity org) {
+        OrgResponseDTO orgDto = orgMapper.toDto(org);
+        if (org.getAccountType() != null && "FREELANCE".equalsIgnoreCase(org.getAccountType())) {
+            return agencyRepositoryPort.findAllByOrganizationId(org.getId())
+                    .next()
+                    .map(agency -> new OrgUserResponseDTO(user, orgDto, agency.getId()))
+                    .defaultIfEmpty(new OrgUserResponseDTO(user, orgDto, null))
+                    .onErrorResume(e -> Mono.just(new OrgUserResponseDTO(user, orgDto, null)));
+        }
+        return Mono.just(new OrgUserResponseDTO(user, orgDto, null));
     }
 
     private Mono<OrganizationEntity> syncGovernanceFromKernelIfNeeded(OrganizationEntity org) {
