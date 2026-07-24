@@ -439,8 +439,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
         ).map(t -> new PlatformStatsDTO.RentalCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
 
         Mono<PlatformStatsDTO.RevenueSummary> revenueMono = Mono.zip(
-                subscriptionRepository.sumActivePlanPrices(),
-                subscriptionRepository.countByStatus("ACTIVE")
+                subscriptionRepository.sumActivePlanPrices().defaultIfEmpty(BigDecimal.ZERO),
+                subscriptionRepository.countActiveOrganizations().defaultIfEmpty(0L)
         ).map(t -> new PlatformStatsDTO.RevenueSummary(
                 t.getT1() != null ? t.getT1() : BigDecimal.ZERO,
                 t.getT2()

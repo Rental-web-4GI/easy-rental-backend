@@ -23,6 +23,8 @@ public interface SubscriptionRepositoryPort {
 
     Mono<Long> countByStatus(String status);
 
+    Mono<Long> countActiveOrganizations();
+
     /** Somme des prix des plans pour les souscriptions actives (statut = ACTIVE), utilisée comme MRR plateforme. */
     Mono<BigDecimal> sumActivePlanPrices();
 }

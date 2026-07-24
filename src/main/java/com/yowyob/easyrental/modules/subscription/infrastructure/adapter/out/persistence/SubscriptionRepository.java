@@ -32,8 +32,17 @@ public interface SubscriptionRepository extends R2dbcRepository<SubscriptionEnti
     Mono<Long> countByStatus(String status);
 
     /**
+     * Nombre d'organisations avec au moins une souscription ACTIVE.
+     * Compte DISTINCT car des données historiques peuvent avoir plusieurs
+     * subs ACTIVE pour une même org (upgrades sans nettoyage).
+     */
+    @Query("SELECT COUNT(DISTINCT organization_id) FROM subscriptions WHERE status = 'ACTIVE'")
+    Mono<Long> countActiveOrganizations();
+
+    /**
      * MRR plateforme : somme des prix des plans dont le nom correspond au planType
-     * des souscriptions actives (statut = ACTIVE).
+     * des souscriptions actives (statut = ACTIVE). Inclut les doublons pour être
+     * fidèle à ce qui est vraiment facturable.
      */
     @Query("""
             SELECT COALESCE(SUM(sp.price), 0) FROM subscriptions s

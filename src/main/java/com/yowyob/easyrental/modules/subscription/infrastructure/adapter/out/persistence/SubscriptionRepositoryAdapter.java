@@ -47,6 +47,11 @@ public class SubscriptionRepositoryAdapter implements SubscriptionRepositoryPort
     }
 
     @Override
+    public Mono<Long> countActiveOrganizations() {
+        return subscriptionRepository.countActiveOrganizations();
+    }
+
+    @Override
     public Mono<BigDecimal> sumActivePlanPrices() {
         return subscriptionRepository.sumActivePlanPrices();
     }
