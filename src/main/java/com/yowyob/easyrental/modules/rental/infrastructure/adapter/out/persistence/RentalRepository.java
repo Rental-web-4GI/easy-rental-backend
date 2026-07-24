@@ -38,4 +38,11 @@ public interface RentalRepository extends R2dbcRepository<RentalEntity, UUID> {
     @Query("SELECT COUNT(*) FROM rentals WHERE vehicle_id = :vehicleId AND start_date < :checkEnd AND end_date >"
             + " :checkStart AND status NOT IN ('CANCELLED', 'COMPLETED')")
     Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime checkStart, LocalDateTime checkEnd);
+
+    Mono<Long> countByStatus(RentalStatus status);
+
+    @Query("SELECT COUNT(*) FROM rentals WHERE status = 'COMPLETED' "
+            + "AND EXTRACT(MONTH FROM updated_at) = EXTRACT(MONTH FROM CURRENT_DATE) "
+            + "AND EXTRACT(YEAR FROM updated_at) = EXTRACT(YEAR FROM CURRENT_DATE)")
+    Mono<Long> countCompletedThisMonth();
 }

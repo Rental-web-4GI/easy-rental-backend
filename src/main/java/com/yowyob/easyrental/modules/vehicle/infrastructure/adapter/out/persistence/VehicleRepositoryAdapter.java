@@ -79,4 +79,14 @@ public class VehicleRepositoryAdapter implements VehicleRepositoryPort {
     public Flux<VehicleEntity> findCatalogAvailableVehicles() {
         return vehicleRepository.findCatalogAvailableVehicles();
     }
+
+    @Override
+    public Mono<Long> count() {
+        return vehicleRepository.count();
+    }
+
+    @Override
+    public Mono<Long> countByStatut(String statut) {
+        return vehicleRepository.countByStatut(statut);
+    }
 }

@@ -30,4 +30,10 @@ public interface RentalRepositoryPort {
     Flux<RentalEntity> findAllByOrganizationIdAndStatusIn(UUID orgId, List<RentalStatus> statuses);
 
     Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end);
+
+    Mono<Long> count();
+
+    Mono<Long> countByStatus(RentalStatus status);
+
+    Mono<Long> countCompletedThisMonth();
 }

@@ -58,4 +58,19 @@ public class RentalRepositoryAdapter implements RentalRepositoryPort {
     public Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end) {
         return rentalRepository.countConflictingRentals(vehicleId, start, end);
     }
+
+    @Override
+    public Mono<Long> count() {
+        return rentalRepository.count();
+    }
+
+    @Override
+    public Mono<Long> countByStatus(RentalStatus status) {
+        return rentalRepository.countByStatus(status);
+    }
+
+    @Override
+    public Mono<Long> countCompletedThisMonth() {
+        return rentalRepository.countCompletedThisMonth();
+    }
 }

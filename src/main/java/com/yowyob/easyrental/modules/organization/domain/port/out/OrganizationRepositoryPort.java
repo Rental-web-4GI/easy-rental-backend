@@ -24,4 +24,10 @@ public interface OrganizationRepositoryPort {
     Mono<OrganizationEntity> findByKernelOrganizationId(UUID kernelOrganizationId);
 
     Flux<OrganizationEntity> findAllExpiredBefore(LocalDateTime threshold);
+
+    Mono<Long> count();
+
+    Mono<Long> countByAccountType(String accountType);
+
+    Mono<Long> countByGovernanceStatus(String governanceStatus);
 }

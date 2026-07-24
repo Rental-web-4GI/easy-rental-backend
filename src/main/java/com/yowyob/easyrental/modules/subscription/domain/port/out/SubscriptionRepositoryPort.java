@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.subscription.domain.port.out;
 
 import com.yowyob.easyrental.modules.subscription.domain.SubscriptionEntity;
+import java.math.BigDecimal;
 import java.util.UUID;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,4 +20,9 @@ public interface SubscriptionRepositoryPort {
     Mono<SubscriptionEntity> findFirstByOrganizationIdAndStatus(UUID organizationId, String status);
 
     Flux<SubscriptionEntity> findAllByPlanType(String planType);
+
+    Mono<Long> countByStatus(String status);
+
+    /** Somme des prix des plans pour les souscriptions actives (statut = ACTIVE), utilisée comme MRR plateforme. */
+    Mono<BigDecimal> sumActivePlanPrices();
 }

@@ -50,4 +50,19 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
     public Flux<OrganizationEntity> findAllExpiredBefore(LocalDateTime threshold) {
         return organizationRepository.findAllExpiredBefore(threshold);
     }
+
+    @Override
+    public Mono<Long> count() {
+        return organizationRepository.count();
+    }
+
+    @Override
+    public Mono<Long> countByAccountType(String accountType) {
+        return organizationRepository.countByAccountType(accountType);
+    }
+
+    @Override
+    public Mono<Long> countByGovernanceStatus(String governanceStatus) {
+        return organizationRepository.countByGovernanceStatus(governanceStatus);
+    }
 }

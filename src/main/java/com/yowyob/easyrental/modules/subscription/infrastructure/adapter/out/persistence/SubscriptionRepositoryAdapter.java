@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Component
@@ -38,5 +39,15 @@ public class SubscriptionRepositoryAdapter implements SubscriptionRepositoryPort
     @Override
     public Flux<SubscriptionEntity> findAllByPlanType(String planType) {
         return subscriptionRepository.findAllByPlanType(planType);
+    }
+
+    @Override
+    public Mono<Long> countByStatus(String status) {
+        return subscriptionRepository.countByStatus(status);
+    }
+
+    @Override
+    public Mono<BigDecimal> sumActivePlanPrices() {
+        return subscriptionRepository.sumActivePlanPrices();
     }
 }

@@ -59,4 +59,9 @@ public class AgencyRepositoryAdapter implements AgencyRepositoryPort {
     public Flux<AgencyEntity> findCatalogAgencies() {
         return agencyRepository.findCatalogAgencies();
     }
+
+    @Override
+    public Mono<Long> count() {
+        return agencyRepository.count();
+    }
 }

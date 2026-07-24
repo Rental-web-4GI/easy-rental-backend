@@ -52,4 +52,6 @@ public interface VehicleRepository extends R2dbcRepository<VehicleEntity, UUID> 
               )
             """)
     Flux<VehicleEntity> findCatalogAvailableVehicles();
+
+    Mono<Long> countByStatut(String statut);
 }

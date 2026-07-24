@@ -1,14 +1,21 @@
 package com.yowyob.easyrental.modules.statistics.application;
 
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
+import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
 import com.yowyob.easyrental.modules.statistics.dto.AgencyComparisonDTO;
 import com.yowyob.easyrental.modules.statistics.dto.AgencyStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.DistributionDataDTO;
 import com.yowyob.easyrental.modules.statistics.dto.FullDashboardDTO;
 import com.yowyob.easyrental.modules.statistics.dto.GlobalStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.OrgStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.PlatformStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.TimeSeriesDataDTO;
 import com.yowyob.easyrental.modules.statistics.domain.port.in.StatisticsUseCase;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
+import com.yowyob.easyrental.shared.enums.RentalStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
@@ -27,6 +34,11 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private final DatabaseClient databaseClient;
     private final AgencyRepositoryPort agencyRepository;
+    private final UserRepositoryPort userRepository;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final VehicleRepositoryPort vehicleRepository;
+    private final RentalRepositoryPort rentalRepository;
+    private final SubscriptionRepositoryPort subscriptionRepository;
 
     public Mono<FullDashboardDTO> getAgencyDashboard(UUID agencyId, int year) {
         return Mono.zip(
@@ -381,5 +393,63 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     agencyStatsList
                 );
             });
+    }
+
+    // ==========================================
+    // STATS PLATEFORME (ADMIN)
+    // ==========================================
+
+    @Override
+    public Mono<PlatformStatsDTO> getPlatformStats() {
+        Mono<PlatformStatsDTO.UserCounts> userCountsMono = Mono.zip(
+                userRepository.count(),
+                userRepository.countByRole("CLIENT"),
+                userRepository.countByRole("ORGANIZATION"),
+                userRepository.countByAccountType("FREELANCE"),
+                userRepository.countByRole("STAFF")
+        ).map(t -> new PlatformStatsDTO.UserCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4(), t.getT5()));
+
+        Mono<PlatformStatsDTO.OrgCounts> orgCountsMono = Mono.zip(
+                organizationRepository.count(),
+                organizationRepository.countByAccountType("COMPANY"),
+                organizationRepository.countByAccountType("FREELANCE"),
+                organizationRepository.countByGovernanceStatus("REJECTED")
+        ).map(t -> new PlatformStatsDTO.OrgCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
+
+        Mono<PlatformStatsDTO.AgencyCounts> agencyCountsMono = Mono.zip(
+                agencyRepository.count(),
+                organizationRepository.countByAccountType("COMPANY")
+        ).map(t -> {
+            long totalAgencies = t.getT1();
+            long companies = t.getT2();
+            double average = companies > 0 ? (double) totalAgencies / companies : 0.0;
+            return new PlatformStatsDTO.AgencyCounts(totalAgencies, average);
+        });
+
+        Mono<PlatformStatsDTO.VehicleCounts> vehicleCountsMono = Mono.zip(
+                vehicleRepository.count(),
+                vehicleRepository.countByStatut("AVAILABLE")
+        ).map(t -> new PlatformStatsDTO.VehicleCounts(t.getT1(), t.getT2()));
+
+        Mono<PlatformStatsDTO.RentalCounts> rentalCountsMono = Mono.zip(
+                rentalRepository.count(),
+                rentalRepository.countByStatus(RentalStatus.ONGOING),
+                rentalRepository.countByStatus(RentalStatus.COMPLETED),
+                rentalRepository.countCompletedThisMonth()
+        ).map(t -> new PlatformStatsDTO.RentalCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
+
+        Mono<PlatformStatsDTO.RevenueSummary> revenueMono = Mono.zip(
+                subscriptionRepository.sumActivePlanPrices(),
+                subscriptionRepository.countByStatus("ACTIVE")
+        ).map(t -> new PlatformStatsDTO.RevenueSummary(
+                t.getT1() != null ? t.getT1() : BigDecimal.ZERO,
+                t.getT2()
+        ));
+
+        return Mono.zip(userCountsMono, orgCountsMono, agencyCountsMono, vehicleCountsMono,
+                        rentalCountsMono, revenueMono)
+                .map(t -> new PlatformStatsDTO(
+                        t.getT1(), t.getT2(), t.getT3(), t.getT4(), t.getT5(), t.getT6()
+                ));
     }
 }

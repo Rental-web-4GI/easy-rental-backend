@@ -35,4 +35,8 @@ public interface VehicleRepositoryPort {
     Flux<VehicleEntity> searchAvailableVehicles(UUID agencyId, UUID categoryId, String keyword);
 
     Flux<VehicleEntity> findCatalogAvailableVehicles();
+
+    Mono<Long> count();
+
+    Mono<Long> countByStatut(String statut);
 }

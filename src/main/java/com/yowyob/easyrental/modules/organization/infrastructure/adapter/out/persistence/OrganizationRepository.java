@@ -18,4 +18,8 @@ public interface OrganizationRepository extends R2dbcRepository<OrganizationEnti
     @Query("SELECT * FROM organizations WHERE subscription_expires_at IS NOT NULL "
             + "AND subscription_expires_at < :threshold")
     Flux<OrganizationEntity> findAllExpiredBefore(LocalDateTime threshold);
+
+    Mono<Long> countByAccountType(String accountType);
+
+    Mono<Long> countByGovernanceStatus(String governanceStatus);
 }
