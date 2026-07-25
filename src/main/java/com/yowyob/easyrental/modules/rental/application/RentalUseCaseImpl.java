@@ -504,41 +504,53 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 if (rental.getStatus() != RentalStatus.UNDER_REVIEW) {
                     return Mono.error(new ValidationException("NOT_UNDER_REVIEW"));
                 }
-                BigDecimal deduction = request.cautionDeduction() == null
-                        ? BigDecimal.ZERO : request.cautionDeduction();
+                BigDecimal damageCost = request.damageCost() == null
+                        ? BigDecimal.ZERO : request.damageCost();
                 BigDecimal held = rental.getCautionHeld() == null
                         ? BigDecimal.ZERO : rental.getCautionHeld();
-                if (deduction.signum() < 0) {
-                    return Mono.error(new ValidationException("DEDUCTION_NEGATIVE"));
+                if (damageCost.signum() < 0) {
+                    return Mono.error(new ValidationException("DAMAGE_COST_NEGATIVE"));
                 }
-                if (deduction.compareTo(held) > 0) {
-                    return Mono.error(new ValidationException("DEDUCTION_EXCEEDS_ESCROW"));
-                }
-                if (deduction.signum() > 0
-                        && (request.retentionReason() == null || request.retentionReason().isBlank())) {
+                if (damageCost.signum() > 0
+                        && (request.reason() == null || request.reason().isBlank())) {
                     return Mono.error(new ValidationException("REASON_REQUIRED"));
                 }
 
+                // Retenue = min(dommages, caution) ; remboursement = le reste ;
+                // supplément dû (créance) = dommages au-delà de la caution.
+                BigDecimal deduction = damageCost.min(held).setScale(2, java.math.RoundingMode.HALF_UP);
                 BigDecimal refunded = held.subtract(deduction).setScale(2, java.math.RoundingMode.HALF_UP);
+                BigDecimal supplement = damageCost.subtract(held).max(BigDecimal.ZERO)
+                        .setScale(2, java.math.RoundingMode.HALF_UP);
                 rental.setCautionDeducted(deduction);
                 rental.setCautionRefunded(refunded);
+                rental.setSupplementDue(supplement);
                 rental.setStatus(RentalStatus.COMPLETED);
                 rental.setUpdatedAt(LocalDateTime.now());
 
                 Mono<Void> refundPayment = refunded.signum() > 0
                         ? paymentRepository.save(buildCautionPayment(
-                                rentalId, refunded, "CAUTION_REFUND", null)).then()
+                                rentalId, refunded, "CAUTION_REFUND", null, BigDecimal.ZERO)).then()
                         : Mono.empty();
+                // Retenue caution = revenu de l'agence → rental_portion = deduction.
                 Mono<Void> retentionPayment = deduction.signum() > 0
                         ? paymentRepository.save(buildCautionPayment(
-                                rentalId, deduction, "CAUTION_RETENTION", request.retentionReason())).then()
+                                rentalId, deduction, "CAUTION_RETENTION", request.reason(), deduction)).then()
+                        : Mono.empty();
+                // Créance : supplément dû (non encore encaissé) — trace, rental_portion=0 tant qu'impayé.
+                Mono<Void> supplementRecord = supplement.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, supplement, "SUPPLEMENT_DUE", request.reason(), BigDecimal.ZERO)).then()
                         : Mono.empty();
 
                 Mono<Void> escrowUpdate = agencyRepository.findById(rental.getAgencyId())
                         .flatMap(agency -> {
-                            BigDecimal current = agency.getCautionEscrowBalance() == null
+                            BigDecimal escrow = agency.getCautionEscrowBalance() == null
                                     ? BigDecimal.ZERO : agency.getCautionEscrowBalance();
-                            agency.setCautionEscrowBalance(current.subtract(held));
+                            agency.setCautionEscrowBalance(escrow.subtract(held));
+                            // Retenue caution = entrée pour l'agence.
+                            double rev = agency.getMonthlyRevenue() == null ? 0.0 : agency.getMonthlyRevenue();
+                            agency.setMonthlyRevenue(rev + deduction.doubleValue());
                             return agencyRepository.save(agency);
                         }).then();
 
@@ -559,10 +571,10 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                     rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
                                     NotificationReason.CAUTION_DEDUCTION, rental.getVehicleId(), rental.getDriverId(),
                                     NotificationTemplate.CAUTION_DEDUCTION_APPLIED_CLIENT,
-                                    deduction, request.retentionReason(), refunded).then()
+                                    deduction, request.reason(), refunded).then()
                             : Mono.empty();
                     Mono<Void> email = rentalEmailPort.sendCautionDeduction(
-                            rental.getClientEmail(), deduction, request.retentionReason(), refunded);
+                            rental.getClientEmail(), deduction, request.reason(), refunded);
                     notifyAndEmail = inApp.then(email);
                 } else {
                     Mono<Void> inApp = rental.getClientId() != null
@@ -578,10 +590,41 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 return rentalRepository.save(rental)
                         .then(refundPayment)
                         .then(retentionPayment)
+                        .then(supplementRecord)
                         .then(escrowUpdate)
                         .then(mileageUpdate)
                         .then(notifyAndEmail)
                         .thenReturn(rental);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> collectSupplement(UUID rentalId, BigDecimal amount) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                BigDecimal due = rental.getSupplementDue() == null ? BigDecimal.ZERO : rental.getSupplementDue();
+                BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
+                if (amt.signum() <= 0) {
+                    return Mono.error(new ValidationException("AMOUNT_REQUIRED"));
+                }
+                if (amt.compareTo(due) > 0) {
+                    return Mono.error(new ValidationException("EXCEEDS_SUPPLEMENT_DUE"));
+                }
+                rental.setSupplementDue(due.subtract(amt).setScale(2, java.math.RoundingMode.HALF_UP));
+                rental.setUpdatedAt(LocalDateTime.now());
+                // Encaissement du supplément = revenu agence (rental_portion = montant).
+                Mono<Void> payment = paymentRepository.save(buildCautionPayment(
+                        rentalId, amt, "SUPPLEMENT_PAID", null, amt)).then();
+                Mono<Void> revenue = agencyRepository.findById(rental.getAgencyId())
+                        .flatMap(agency -> {
+                            double rev = agency.getMonthlyRevenue() == null ? 0.0 : agency.getMonthlyRevenue();
+                            agency.setMonthlyRevenue(rev + amt.doubleValue());
+                            return agencyRepository.save(agency);
+                        }).then();
+                return rentalRepository.save(rental).then(payment).then(revenue).thenReturn(rental);
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
     }
@@ -603,7 +646,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 type, src.odometer(), src.fuelLevel(), src.notes(), src.photoUrls(), src.items());
     }
 
-    private PaymentEntity buildCautionPayment(UUID rentalId, BigDecimal amount, String category, String reason) {
+    private PaymentEntity buildCautionPayment(UUID rentalId, BigDecimal amount, String category,
+            String reason, BigDecimal rentalPortion) {
         return PaymentEntity.builder()
                 .id(UUID.randomUUID())
                 .rentalId(rentalId)
@@ -612,8 +656,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 .transactionDate(LocalDateTime.now())
                 .transactionRef(reason)
                 .paymentCategory(category)
-                .rentalPortion(BigDecimal.ZERO)
-                .cautionPortion(amount)
+                .rentalPortion(rentalPortion)
+                .cautionPortion(amount.subtract(rentalPortion))
                 .isNewRecord(true)
                 .build();
     }

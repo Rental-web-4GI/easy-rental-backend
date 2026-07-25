@@ -31,6 +31,7 @@ public interface RentalUseCase {
     Mono<RentalDetailResponseDTO> signalEnd(UUID rentalId);
     Mono<RentalDetailResponseDTO> checkOut(UUID rentalId, CheckOutRequest request);
     Mono<RentalDetailResponseDTO> settleReturn(UUID rentalId, CheckoutSettlementRequest request);
+    Mono<RentalDetailResponseDTO> collectSupplement(UUID rentalId, java.math.BigDecimal amount);
     Mono<RentalEntity> cancelRental(UUID rentalId);
     Flux<RentalEntity> getClientActiveReservations(UUID clientId);
     Flux<RentalEntity> getClientRentalsHistory(UUID clientId);

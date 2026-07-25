@@ -162,18 +162,7 @@ class RentalUseCaseImplCheckoutTest {
     }
 
     @Test
-    void settleReturn_deductionOverEscrow_throws() {
-        when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(rental(RentalStatus.UNDER_REVIEW)));
-
-        StepVerifier.create(useCase.settleReturn(rentalId,
-                        new CheckoutSettlementRequest(new BigDecimal("40000"), "damage")))
-                .expectErrorMatches(e -> e instanceof ValidationException
-                        && e.getMessage().equals("DEDUCTION_EXCEEDS_ESCROW"))
-                .verify();
-    }
-
-    @Test
-    void settleReturn_deductionWithoutReason_throws() {
+    void settleReturn_damageWithoutReason_throws() {
         when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(rental(RentalStatus.UNDER_REVIEW)));
 
         StepVerifier.create(useCase.settleReturn(rentalId,
@@ -184,14 +173,14 @@ class RentalUseCaseImplCheckoutTest {
     }
 
     @Test
-    void settleReturn_normal_createsTwoPaymentsAndCompletes() {
+    void settleReturn_damageWithinCaution_retainsAndRefunds() {
         RentalEntity r = rental(RentalStatus.UNDER_REVIEW);
         r.setEndOdometer(50350);
         when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(r));
         when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(paymentRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         AgencyEntity agency = AgencyEntity.builder().id(agencyId)
-                .cautionEscrowBalance(new BigDecimal("30000.00")).build();
+                .cautionEscrowBalance(new BigDecimal("30000.00")).monthlyRevenue(0.0).build();
         when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
         when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(agencyMapper.toDto(any())).thenReturn(mock(AgencyResponseDTO.class));
@@ -200,6 +189,7 @@ class RentalUseCaseImplCheckoutTest {
         when(vehicleRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(vehicleService.getVehicleById(any())).thenReturn(Mono.empty());
 
+        // Dommages 5000 < caution 30000 → retenue 5000, remboursement 25000, pas de supplément
         StepVerifier.create(useCase.settleReturn(rentalId,
                         new CheckoutSettlementRequest(new BigDecimal("5000"), "rayure portière")))
                 .expectNextCount(1)
@@ -210,28 +200,66 @@ class RentalUseCaseImplCheckoutTest {
         List<PaymentEntity> payments = payCaptor.getAllValues();
         assertThat(payments).anyMatch(p -> "CAUTION_REFUND".equals(p.getPaymentCategory())
                 && p.getAmount().compareTo(new BigDecimal("25000.00")) == 0);
+        // Retenue = revenu → rental_portion = 5000
         assertThat(payments).anyMatch(p -> "CAUTION_RETENTION".equals(p.getPaymentCategory())
-                && p.getAmount().compareTo(new BigDecimal("5000")) == 0);
+                && p.getAmount().compareTo(new BigDecimal("5000")) == 0
+                && p.getRentalPortion().compareTo(new BigDecimal("5000")) == 0);
 
         ArgumentCaptor<RentalEntity> rentalCaptor = ArgumentCaptor.forClass(RentalEntity.class);
         verify(rentalRepository).save(rentalCaptor.capture());
         assertThat(rentalCaptor.getValue().getStatus()).isEqualTo(RentalStatus.COMPLETED);
         assertThat(rentalCaptor.getValue().getCautionDeducted()).isEqualByComparingTo("5000");
         assertThat(rentalCaptor.getValue().getCautionRefunded()).isEqualByComparingTo("25000.00");
+        assertThat(rentalCaptor.getValue().getSupplementDue()).isEqualByComparingTo("0");
 
         ArgumentCaptor<AgencyEntity> agencyCaptor = ArgumentCaptor.forClass(AgencyEntity.class);
         verify(agencyRepository).save(agencyCaptor.capture());
         assertThat(agencyCaptor.getValue().getCautionEscrowBalance()).isEqualByComparingTo("0.00");
+        // Retenue caution = entrée agence
+        assertThat(agencyCaptor.getValue().getMonthlyRevenue()).isEqualTo(5000.0);
     }
 
     @Test
-    void settleReturn_zeroDeduction_singleRefundPayment() {
+    void settleReturn_damageExceedsCaution_recordsSupplement() {
         RentalEntity r = rental(RentalStatus.UNDER_REVIEW);
         when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(r));
         when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(paymentRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         AgencyEntity agency = AgencyEntity.builder().id(agencyId)
-                .cautionEscrowBalance(new BigDecimal("30000.00")).build();
+                .cautionEscrowBalance(new BigDecimal("30000.00")).monthlyRevenue(0.0).build();
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
+        when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(agencyMapper.toDto(any())).thenReturn(mock(AgencyResponseDTO.class));
+        when(vehicleService.getVehicleById(any())).thenReturn(Mono.empty());
+
+        // Dommages 45000 > caution 30000 → retenue 30000, remboursement 0, supplément 15000
+        StepVerifier.create(useCase.settleReturn(rentalId,
+                        new CheckoutSettlementRequest(new BigDecimal("45000"), "moteur endommagé")))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        ArgumentCaptor<PaymentEntity> payCaptor = ArgumentCaptor.forClass(PaymentEntity.class);
+        verify(paymentRepository, times(2)).save(payCaptor.capture());
+        List<PaymentEntity> payments = payCaptor.getAllValues();
+        assertThat(payments).anyMatch(p -> "CAUTION_RETENTION".equals(p.getPaymentCategory())
+                && p.getAmount().compareTo(new BigDecimal("30000.00")) == 0);
+        assertThat(payments).anyMatch(p -> "SUPPLEMENT_DUE".equals(p.getPaymentCategory())
+                && p.getAmount().compareTo(new BigDecimal("15000.00")) == 0);
+
+        ArgumentCaptor<RentalEntity> rentalCaptor = ArgumentCaptor.forClass(RentalEntity.class);
+        verify(rentalRepository).save(rentalCaptor.capture());
+        assertThat(rentalCaptor.getValue().getSupplementDue()).isEqualByComparingTo("15000.00");
+        assertThat(rentalCaptor.getValue().getCautionRefunded()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void settleReturn_noDamage_fullRefund() {
+        RentalEntity r = rental(RentalStatus.UNDER_REVIEW);
+        when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(r));
+        when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(paymentRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        AgencyEntity agency = AgencyEntity.builder().id(agencyId)
+                .cautionEscrowBalance(new BigDecimal("30000.00")).monthlyRevenue(0.0).build();
         when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
         when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(agencyMapper.toDto(any())).thenReturn(mock(AgencyResponseDTO.class));

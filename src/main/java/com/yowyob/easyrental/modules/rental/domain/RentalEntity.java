@@ -59,6 +59,8 @@ public class RentalEntity implements Persistable<UUID> {
     private BigDecimal cautionDeducted = BigDecimal.ZERO;
     @Builder.Default
     private BigDecimal cautionRefunded = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal supplementDue = BigDecimal.ZERO;
 
     private BigDecimal requestedUpfront;
 

@@ -148,6 +148,15 @@ public class RentalController {
         return rentalUseCase.settleReturn(id, request).map(ResponseEntity::ok);
     }
 
+    @Operation(summary = "Collect the outstanding supplement (créance) owed by the client")
+    @PostMapping("/{id}/collect-supplement")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> collectSupplement(
+            @PathVariable UUID id,
+            @RequestBody java.util.Map<String, java.math.BigDecimal> body) {
+        return rentalUseCase.collectSupplement(id, body.get("amount")).map(ResponseEntity::ok);
+    }
+
     @Operation(summary = "Client active reservations")
     @GetMapping("/client/reservations/active")
     public Flux<RentalEntity> getClientActiveReservations() {

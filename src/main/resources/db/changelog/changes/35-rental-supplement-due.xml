@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!--
+      Supplément dû par le client quand le coût des dommages dépasse la caution
+      détenue (créance encaissée à part). 0 par défaut.
+    -->
+    <changeSet id="35-rental-supplement-due" author="release2-fix">
+        <sql>
+            ALTER TABLE rentals ADD COLUMN IF NOT EXISTS supplement_due NUMERIC(19,2) DEFAULT 0;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

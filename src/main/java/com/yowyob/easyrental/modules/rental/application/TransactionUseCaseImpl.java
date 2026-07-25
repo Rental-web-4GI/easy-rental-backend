@@ -39,7 +39,9 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
         return switch (cat) {
             case "CAUTION" -> "Caution (escrow) #" + rentalIdShort;
             case "CAUTION_REFUND" -> "Remboursement caution #" + rentalIdShort;
-            case "CAUTION_RETENTION" -> "Retenue caution #" + rentalIdShort;
+            case "CAUTION_RETENTION" -> "Retenue caution (dommages) #" + rentalIdShort;
+            case "SUPPLEMENT_DUE" -> "Supplément dû (créance) #" + rentalIdShort;
+            case "SUPPLEMENT_PAID" -> "Supplément encaissé #" + rentalIdShort;
             default -> "Location #" + rentalIdShort;
         };
     }
