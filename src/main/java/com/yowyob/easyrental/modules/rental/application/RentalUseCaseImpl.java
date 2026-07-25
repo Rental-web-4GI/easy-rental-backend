@@ -16,6 +16,7 @@ import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitResponse;
+import com.yowyob.easyrental.modules.rental.dto.RentalPricingBreakdown;
 import com.yowyob.easyrental.shared.dto.ScheduleRequestDTO;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
@@ -133,9 +134,11 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             : BigDecimal.ZERO;
 
                         BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
-                        BigDecimal commission = baseAmount.multiply(RentalConstants.PLATFORM_COMMISSION_RATE);
-                        BigDecimal deposit = baseAmount.multiply(RentalConstants.DEPOSIT_RATE);
-                        BigDecimal totalFinal = baseAmount.add(commission).add(deposit);
+                        RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
+                            baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
+                        BigDecimal commission = breakdown.commissionAmount();
+                        BigDecimal deposit = breakdown.requestedUpfront();
+                        BigDecimal totalFinal = breakdown.totalDue();
 
                         // SOLUTION ANTI-DOUBLON : On cherche si une réservation PENDING existe déjà
                         return rentalRepository.findExistingPendingRental(clientId, request.vehicleId())
@@ -145,9 +148,12 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 existingRental.setStartDate(request.startDate());
                                 existingRental.setEndDate(request.endDate());
                                 existingRental.setRentalType(request.rentalType());
-                                existingRental.setTotalAmount(totalFinal);
+                                existingRental.setTotalAmount(breakdown.totalDue());
                                 existingRental.setCommissionAmount(commission);
-                                existingRental.setDepositAmount(deposit);
+                                existingRental.setDepositAmount(breakdown.requestedUpfront());
+                                existingRental.setRentalAmount(breakdown.rentalAmount());
+                                existingRental.setCautionAmount(breakdown.cautionAmount());
+                                existingRental.setRequestedUpfront(breakdown.requestedUpfront());
                                 existingRental.setClientPhone(request.clientPhone());
                                 existingRental.setClientName(clientLabel);
                                 existingRental.setClientEmail(client.getEmail());
@@ -169,10 +175,17 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                     .endDate(request.endDate())
                                     .status(RentalStatus.PENDING)
                                     .rentalType(request.rentalType())
-                                    .totalAmount(totalFinal)
+                                    .totalAmount(breakdown.totalDue())
                                     .amountPaid(BigDecimal.ZERO)
                                     .commissionAmount(commission)
-                                    .depositAmount(deposit)
+                                    .depositAmount(breakdown.requestedUpfront())
+                                    .rentalAmount(breakdown.rentalAmount())
+                                    .cautionAmount(breakdown.cautionAmount())
+                                    .rentalAmountPaid(BigDecimal.ZERO)
+                                    .cautionAmountPaid(BigDecimal.ZERO)
+                                    .cautionHeld(BigDecimal.ZERO)
+                                    .requestedUpfront(breakdown.requestedUpfront())
+                                    .trackedKm(BigDecimal.ZERO)
                                     .clientPhone(request.clientPhone())
                                     .createdAt(LocalDateTime.now())
                                     .updatedAt(LocalDateTime.now())
@@ -183,8 +196,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             .map(saved -> new RentalInitResponse(
                                 true,
                                 String.format(NotificationTemplate.RESERVATION_INIT_CLIENT.getTemplate(),
-                                    totalFinal.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE)),
-                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                                    breakdown.requestedUpfront()),
+                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                                breakdown
                             ))
                             // Notification agence : nouvelle réservation reçue
                             .flatMap(response -> notificationService.createNotification(
@@ -228,9 +242,11 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     : BigDecimal.ZERO;
 
                 BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
-                BigDecimal commission = baseAmount.multiply(BigDecimal.valueOf(0.01));
-                BigDecimal deposit = baseAmount.multiply(BigDecimal.valueOf(0.10));
-                BigDecimal totalFinal = baseAmount.add(commission).add(deposit);
+                RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
+                    baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
+                BigDecimal commission = breakdown.commissionAmount();
+                BigDecimal deposit = breakdown.requestedUpfront();
+                BigDecimal totalFinal = breakdown.totalDue();
 
                 return rentalRepository.countConflictingRentals(
                         request.vehicleId(), request.startDate(), request.endDate())
@@ -257,6 +273,13 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     .amountPaid(BigDecimal.ZERO)
                     .commissionAmount(commission)
                     .depositAmount(deposit)
+                    .rentalAmount(breakdown.rentalAmount())
+                    .cautionAmount(breakdown.cautionAmount())
+                    .rentalAmountPaid(BigDecimal.ZERO)
+                    .cautionAmountPaid(BigDecimal.ZERO)
+                    .cautionHeld(BigDecimal.ZERO)
+                    .requestedUpfront(breakdown.requestedUpfront())
+                    .trackedKm(BigDecimal.ZERO)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .isNewRecord(true)
@@ -266,13 +289,14 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     .flatMap(saved -> {
                         BigDecimal counterAmount = request.initialPaymentAmount() != null
                             ? request.initialPaymentAmount()
-                            : totalFinal.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE);
+                            : breakdown.requestedUpfront();
                         PaymentMethod method = request.paymentMethod() != null
                             ? request.paymentMethod()
                             : PaymentMethod.CASH;
                         RentalInitResponse created = new RentalInitResponse(
                             true, "Réservation agence créée.",
-                            saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                            saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                            breakdown
                         );
                         if (counterAmount.compareTo(BigDecimal.ZERO) <= 0) {
                             return Mono.just(created);
@@ -281,7 +305,8 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 saved.getId(), new PaymentRequest(counterAmount, method))
                             .thenReturn(new RentalInitResponse(
                                 true, "Réservation confirmée — acompte encaissé au comptoir.",
-                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                                breakdown
                             ));
                     });
                     });

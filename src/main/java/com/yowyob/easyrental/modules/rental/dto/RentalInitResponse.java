@@ -11,5 +11,6 @@ public record RentalInitResponse(
     BigDecimal totalAmount,
     BigDecimal depositAmount,
     BigDecimal commissionAmount,
-    AgencyResponseDTO agencyDetails // Pour contacter l'agence si refusé
+    AgencyResponseDTO agencyDetails, // Pour contacter l'agence si refusé
+    RentalPricingBreakdown pricing // R2 : ventilation location/caution/acompte 60%
 ) {}
