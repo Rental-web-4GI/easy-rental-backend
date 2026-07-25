@@ -30,6 +30,20 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
     private final RentalUseCase rentalUseCase;
     private final AuthUserPort authUserPort;
 
+    /**
+     * Libellé humain d'un paiement selon sa catégorie R2 (rental_portion vs caution).
+     * Les paiements legacy (paymentCategory null) restent « Location ».
+     */
+    private static String describe(String paymentCategory, String rentalIdShort) {
+        String cat = paymentCategory == null ? "" : paymentCategory;
+        return switch (cat) {
+            case "CAUTION" -> "Caution (escrow) #" + rentalIdShort;
+            case "CAUTION_REFUND" -> "Remboursement caution #" + rentalIdShort;
+            case "CAUTION_RETENTION" -> "Retenue caution #" + rentalIdShort;
+            default -> "Location #" + rentalIdShort;
+        };
+    }
+
     // =================================================================================
     // NOUVELLE MÉTHODE : Obtenir les détails complets d'une transaction
     // =================================================================================
@@ -81,7 +95,7 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
                     payment.getId(),
                     "RENTAL_PAYMENT",
                     payment.getAmount(),
-                    "Paiement Location #" + rental.getId().toString().substring(0, 8),
+                    describe(payment.getPaymentCategory(), rental.getId().toString().substring(0, 8)),
                     payment.getTransactionDate(),
                     payment.getTransactionRef(),
                     "COMPLETED",
@@ -99,7 +113,7 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
                     payment.getId(),
                     "RENTAL_PAYMENT",
                     payment.getAmount(),
-                    "Revenu Location #" + rental.getId().toString().substring(0, 8),
+                    describe(payment.getPaymentCategory(), rental.getId().toString().substring(0, 8)),
                     payment.getTransactionDate(),
                     payment.getTransactionRef(),
                     "COMPLETED",

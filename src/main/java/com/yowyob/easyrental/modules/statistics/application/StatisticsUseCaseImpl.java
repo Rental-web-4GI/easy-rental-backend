@@ -94,9 +94,11 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id) as total_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'ONGOING') as active_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0)
+                    FROM payments p JOIN rentals r ON p.rental_id = r.id
                     WHERE r.agency_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0)
+                    FROM payments p JOIN rentals r ON p.rental_id = r.id
                     WHERE r.agency_id = :id
                     AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
         """;
@@ -118,7 +120,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private Mono<TimeSeriesDataDTO> getRevenueEvolution(UUID agencyId, int year) {
         String sql = """
-            SELECT TO_CHAR(transaction_date, 'Mon') as month, SUM(amount) as total
+            SELECT TO_CHAR(transaction_date, 'Mon') as month,
+                   SUM(COALESCE(p.rental_portion, p.amount)) as total
             FROM payments p JOIN rentals r ON p.rental_id = r.id
             WHERE r.agency_id = :id AND EXTRACT(YEAR FROM transaction_date) = :year
             GROUP BY EXTRACT(MONTH FROM transaction_date), TO_CHAR(transaction_date, 'Mon')
@@ -172,10 +175,10 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     WHERE a.organization_id = :id AND r.status = 'ONGOING') as active_rentals,
                 (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id AND r.status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p
                     JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p
                     JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id
                     AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
@@ -198,7 +201,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private Mono<TimeSeriesDataDTO> getRevenueEvolutionForOrg(List<UUID> agencyIds, int year) {
         String sql = """
-            SELECT TO_CHAR(transaction_date, 'Mon') as month, SUM(amount) as total
+            SELECT TO_CHAR(transaction_date, 'Mon') as month,
+                   SUM(COALESCE(p.rental_portion, p.amount)) as total
             FROM payments p JOIN rentals r ON p.rental_id = r.id
             WHERE r.agency_id IN (:ids) AND EXTRACT(YEAR FROM transaction_date) = :year
             GROUP BY EXTRACT(MONTH FROM transaction_date), TO_CHAR(transaction_date, 'Mon')
@@ -271,7 +275,7 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     .bind("id", agency.getId()).map(row -> row.get(0, Long.class)).one();
 
                 Mono<BigDecimal> revenue = databaseClient.sql(
-                        "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+                        "SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p "
                         + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id")
                     .bind("id", agency.getId()).map(row -> row.get(0, BigDecimal.class)).one();
 
@@ -298,7 +302,7 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
             ? "EXTRACT(YEAR FROM created_at) = :year"
             : "EXTRACT(YEAR FROM created_at) = :year AND EXTRACT(MONTH FROM created_at) = :month";
 
-        String revSql = "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+        String revSql = "SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p "
                 + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :agencyId "
                 + "AND EXTRACT(YEAR FROM p.transaction_date) = :year"
                 + (month != null ? " AND EXTRACT(MONTH FROM p.transaction_date) = :month" : "");
