@@ -93,16 +93,7 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
     public Flux<TransactionResponseDTO> getClientTransactions(UUID clientId) {
         return paymentRepository.findAllByClientId(clientId)
             .flatMap(payment -> rentalRepository.findById(payment.getRentalId())
-                .map(rental -> new TransactionResponseDTO(
-                    payment.getId(),
-                    "RENTAL_PAYMENT",
-                    payment.getAmount(),
-                    describe(payment.getPaymentCategory(), rental.getId().toString().substring(0, 8)),
-                    payment.getTransactionDate(),
-                    payment.getTransactionRef(),
-                    "COMPLETED",
-                    payment.getPaymentMethod()
-                )));
+                .map(rental -> paymentToTransaction(payment, rental.getId().toString().substring(0, 8))));
     }
 
     /**
@@ -111,16 +102,33 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
     public Flux<TransactionResponseDTO> getAgencyTransactions(UUID agencyId) {
         return paymentRepository.findAllByAgencyId(agencyId)
             .flatMap(payment -> rentalRepository.findById(payment.getRentalId())
-                .map(rental -> new TransactionResponseDTO(
-                    payment.getId(),
-                    "RENTAL_PAYMENT",
-                    payment.getAmount(),
-                    describe(payment.getPaymentCategory(), rental.getId().toString().substring(0, 8)),
-                    payment.getTransactionDate(),
-                    payment.getTransactionRef(),
-                    "COMPLETED",
-                    payment.getPaymentMethod()
-                )));
+                .map(rental -> paymentToTransaction(payment, rental.getId().toString().substring(0, 8))));
+    }
+
+    /** Construit une transaction ventilée (revenu vs caution) à partir d'un paiement. */
+    private TransactionResponseDTO paymentToTransaction(
+            com.yowyob.easyrental.modules.rental.domain.PaymentEntity payment, String rentalIdShort) {
+        java.math.BigDecimal rentalPortion = payment.getRentalPortion() != null
+                ? payment.getRentalPortion() : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal cautionPortion = payment.getCautionPortion() != null
+                ? payment.getCautionPortion() : java.math.BigDecimal.ZERO;
+        // Paiement legacy sans ventilation → tout compte comme revenu location.
+        if (payment.getPaymentCategory() == null && payment.getRentalPortion() == null
+                && payment.getCautionPortion() == null) {
+            rentalPortion = payment.getAmount();
+        }
+        return new TransactionResponseDTO(
+                payment.getId(),
+                "RENTAL_PAYMENT",
+                payment.getAmount(),
+                describe(payment.getPaymentCategory(), rentalIdShort),
+                payment.getTransactionDate(),
+                payment.getTransactionRef(),
+                "COMPLETED",
+                payment.getPaymentMethod(),
+                payment.getPaymentCategory() == null ? "RENTAL_FEE" : payment.getPaymentCategory(),
+                rentalPortion,
+                cautionPortion);
     }
 
     /**
@@ -131,16 +139,7 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
 
         // 1. Flux des revenus locatifs (Positif)
         Flux<TransactionResponseDTO> rentalIncomeFlux = paymentRepository.findAllRentalPaymentsByOrganizationId(orgId)
-            .map(payment -> new TransactionResponseDTO(
-                payment.getId(),
-                "RENTAL_INCOME",
-                payment.getAmount(),
-                "Revenu Location (Ref: " + payment.getTransactionRef() + ")",
-                payment.getTransactionDate(),
-                payment.getTransactionRef(),
-                "COMPLETED",
-                payment.getPaymentMethod()
-            ));
+            .map(payment -> paymentToTransaction(payment, "org"));
 
         // 2. Flux des dépenses d'abonnement (Négatif ou Informatif)
         Flux<TransactionResponseDTO> subscriptionExpenseFlux = subscriptionRepository
@@ -154,7 +153,10 @@ public class TransactionUseCaseImpl implements TransactionUseCase {
                     sub.getStartDate(),
                     "SUB-" + sub.getId().toString().substring(0, 8),
                     sub.getStatus(),
-                    null // Méthode de paiement non stockée dans l'historique sub pour l'instant
+                    null,
+                    "SUBSCRIPTION",
+                    java.math.BigDecimal.ZERO,
+                    java.math.BigDecimal.ZERO
                 )));
 
         // 3. Fusion et Tri
