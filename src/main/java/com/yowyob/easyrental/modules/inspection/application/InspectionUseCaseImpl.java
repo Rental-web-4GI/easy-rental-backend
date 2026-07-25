@@ -8,6 +8,7 @@ import com.yowyob.easyrental.modules.inspection.domain.RentalInspectionEntity;
 import com.yowyob.easyrental.modules.inspection.domain.port.in.InspectionUseCase;
 import com.yowyob.easyrental.modules.inspection.domain.port.out.InspectionItemRepositoryPort;
 import com.yowyob.easyrental.modules.inspection.domain.port.out.InspectionRepositoryPort;
+import com.yowyob.easyrental.modules.inspection.dto.InspectionComparisonResult;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionItemDTO;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionResponseDTO;
@@ -36,6 +37,7 @@ public class InspectionUseCaseImpl implements InspectionUseCase {
     private final InspectionRepositoryPort inspectionRepository;
     private final InspectionItemRepositoryPort inspectionItemRepository;
     private final InspectionMapper inspectionMapper;
+    private final InspectionComparisonService comparisonService;
 
     @Override
     public Mono<InspectionResponseDTO> createInspection(UUID rentalId, InspectionCreateRequest request) {
@@ -78,6 +80,27 @@ public class InspectionUseCaseImpl implements InspectionUseCase {
                 .flatMap(inspection -> inspectionItemRepository.findAllByInspectionId(inspection.getId())
                         .collectList()
                         .map(items -> inspectionMapper.toResponseDto(inspection, items)));
+    }
+
+    @Override
+    public Mono<InspectionComparisonResult> compareCheckInOut(UUID rentalId) {
+        return inspectionRepository.findAllByRentalId(rentalId)
+                .collectList()
+                .flatMap(all -> {
+                    RentalInspectionEntity in = all.stream()
+                            .filter(i -> i.getType() == InspectionType.CHECK_IN)
+                            .findFirst().orElse(null);
+                    RentalInspectionEntity out = all.stream()
+                            .filter(i -> i.getType() == InspectionType.CHECK_OUT)
+                            .findFirst().orElse(null);
+                    if (in == null || out == null) {
+                        return Mono.error(new ValidationException("MISSING_INSPECTION"));
+                    }
+                    return Mono.zip(
+                            inspectionItemRepository.findAllByInspectionId(in.getId()).collectList(),
+                            inspectionItemRepository.findAllByInspectionId(out.getId()).collectList()
+                    ).map(tuple -> comparisonService.compare(in, tuple.getT1(), out, tuple.getT2()));
+                });
     }
 
     private List<InspectionItemEntity> buildItemEntities(UUID inspectionId, List<InspectionItemDTO> items) {

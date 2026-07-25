@@ -38,6 +38,8 @@ class InspectionUseCaseImplTest {
     private InspectionItemRepositoryPort inspectionItemRepository;
     @Mock
     private InspectionMapper inspectionMapper;
+    @Mock
+    private InspectionComparisonService comparisonService;
 
     @InjectMocks
     private InspectionUseCaseImpl useCase;

@@ -1,6 +1,7 @@
 package com.yowyob.easyrental.modules.inspection.infrastructure.adapter.in.web;
 
 import com.yowyob.easyrental.modules.inspection.domain.port.in.InspectionUseCase;
+import com.yowyob.easyrental.modules.inspection.dto.InspectionComparisonResult;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionResponseDTO;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -49,5 +50,11 @@ public class InspectionController {
     @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF','CLIENT')")
     public Flux<InspectionResponseDTO> listByRental(@PathVariable UUID rentalId) {
         return useCase.listByRental(rentalId);
+    }
+
+    @GetMapping("/rentals/{rentalId}/comparison")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF')")
+    public Mono<InspectionComparisonResult> compare(@PathVariable UUID rentalId) {
+        return useCase.compareCheckInOut(rentalId);
     }
 }

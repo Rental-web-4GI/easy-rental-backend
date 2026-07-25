@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.inspection.domain.port.in;
 
+import com.yowyob.easyrental.modules.inspection.dto.InspectionComparisonResult;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionResponseDTO;
 import java.util.UUID;
@@ -16,4 +17,5 @@ public interface InspectionUseCase {
     Mono<InspectionResponseDTO> createInspection(UUID rentalId, InspectionCreateRequest request);
     Mono<InspectionResponseDTO> getInspection(UUID inspectionId);
     Flux<InspectionResponseDTO> listByRental(UUID rentalId);
+    Mono<InspectionComparisonResult> compareCheckInOut(UUID rentalId);
 }
