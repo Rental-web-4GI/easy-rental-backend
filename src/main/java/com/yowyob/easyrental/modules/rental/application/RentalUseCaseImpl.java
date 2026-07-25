@@ -140,15 +140,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         var driverPrice = tuple.getT2();
                         var agency = tuple.getT3();
 
-                        long duration = RentalDurationCalculator.billableUnits(
-                            request.startDate(), request.endDate(), request.rentalType());
-
-                        BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
-                        BigDecimal dPrice = hasDriverSelected
-                            ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
-                            : BigDecimal.ZERO;
-
-                        BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
+                        BigDecimal baseAmount = RentalDurationCalculator.computeBaseAmount(
+                            request.startDate(), request.endDate(), request.rentalType(),
+                            vehiclePrice, hasDriverSelected ? driverPrice : null);
                         RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
                             baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
                         BigDecimal commission = breakdown.commissionAmount();
@@ -248,15 +242,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 var driverPrice = tuple.getT2();
                 var agency = tuple.getT3();
 
-                long duration = RentalDurationCalculator.billableUnits(
-                    request.startDate(), request.endDate(), request.rentalType());
-
-                BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
-                BigDecimal dPrice = (request.driverId() != null)
-                    ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
-                    : BigDecimal.ZERO;
-
-                BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
+                BigDecimal baseAmount = RentalDurationCalculator.computeBaseAmount(
+                    request.startDate(), request.endDate(), request.rentalType(),
+                    vehiclePrice, request.driverId() != null ? driverPrice : null);
                 RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
                     baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
                 BigDecimal commission = breakdown.commissionAmount();
