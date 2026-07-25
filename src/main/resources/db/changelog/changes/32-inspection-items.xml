@@ -7,7 +7,7 @@
 
     <changeSet id="32-inspection-items" author="release2">
         <sql>
-            CREATE TABLE inspection_items (
+            CREATE TABLE IF NOT EXISTS inspection_items (
                 id UUID PRIMARY KEY,
                 inspection_id UUID NOT NULL REFERENCES rental_inspections(id) ON DELETE CASCADE,
                 item_code VARCHAR(64) NOT NULL,
@@ -15,7 +15,7 @@
                 note TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
-            CREATE INDEX idx_inspection_items_inspection ON inspection_items(inspection_id);
+            CREATE INDEX IF NOT EXISTS idx_inspection_items_inspection ON inspection_items(inspection_id);
         </sql>
     </changeSet>
 

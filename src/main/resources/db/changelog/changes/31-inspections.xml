@@ -7,7 +7,7 @@
 
     <changeSet id="31-inspections" author="release2">
         <sql>
-            CREATE TABLE rental_inspections (
+            CREATE TABLE IF NOT EXISTS rental_inspections (
                 id UUID PRIMARY KEY,
                 rental_id UUID NOT NULL REFERENCES rentals(id),
                 type VARCHAR(16) NOT NULL CHECK (type IN ('CHECK_IN','CHECK_OUT')),
@@ -18,7 +18,8 @@
                 performed_by UUID,
                 performed_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
-            CREATE INDEX idx_rental_inspections_rental_type ON rental_inspections(rental_id, type);
+            CREATE INDEX IF NOT EXISTS idx_rental_inspections_rental_type
+                ON rental_inspections(rental_id, type);
         </sql>
     </changeSet>
 

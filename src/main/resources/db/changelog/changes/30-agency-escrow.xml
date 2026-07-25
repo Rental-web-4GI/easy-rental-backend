@@ -8,7 +8,7 @@
     <changeSet id="30-agency-escrow" author="release2">
         <sql>
             ALTER TABLE agencies
-            ADD COLUMN caution_escrow_balance NUMERIC(19,2) DEFAULT 0;
+            ADD COLUMN IF NOT EXISTS caution_escrow_balance NUMERIC(19,2) DEFAULT 0;
         </sql>
     </changeSet>
 

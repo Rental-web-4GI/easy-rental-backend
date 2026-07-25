@@ -7,7 +7,7 @@
 
     <changeSet id="33-rental-positions" author="release2">
         <sql>
-            CREATE TABLE rental_positions (
+            CREATE TABLE IF NOT EXISTS rental_positions (
                 id UUID PRIMARY KEY,
                 rental_id UUID NOT NULL,
                 vehicle_id UUID,
@@ -17,8 +17,9 @@
                 recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 source VARCHAR(16)
             );
-            CREATE INDEX idx_rental_positions_rental_recorded ON rental_positions(rental_id, recorded_at);
-            CREATE INDEX idx_rental_positions_geo ON rental_positions USING GIST(location);
+            CREATE INDEX IF NOT EXISTS idx_rental_positions_rental_recorded
+                ON rental_positions(rental_id, recorded_at);
+            CREATE INDEX IF NOT EXISTS idx_rental_positions_geo ON rental_positions USING GIST(location);
         </sql>
     </changeSet>
 
