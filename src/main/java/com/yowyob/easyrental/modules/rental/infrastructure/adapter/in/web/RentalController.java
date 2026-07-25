@@ -5,6 +5,9 @@ import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckOutRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
 import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
@@ -104,6 +107,45 @@ public class RentalController {
     @PutMapping("/{id}/cancel")
     public Mono<ResponseEntity<RentalEntity>> cancelRental(@PathVariable UUID id) {
         return rentalUseCase.cancelRental(id).map(ResponseEntity::ok);
+    }
+
+    // ===================================================================
+    // R2 — Cycle location complet (inspections + caution)
+    // Nouveaux chemins pour ne pas casser les endpoints legacy ci-dessus.
+    // ===================================================================
+
+    @Operation(summary = "Check-in (vehicle pickup) with CHECK_IN inspection + start odometer")
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> checkIn(
+            @PathVariable UUID id,
+            @RequestBody CheckInRequest request) {
+        return rentalUseCase.checkIn(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Signal rental end — R2 (client), returns full detail")
+    @PostMapping("/{id}/signal-end")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('CLIENT') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> signalEndR2(@PathVariable UUID id) {
+        return rentalUseCase.signalEnd(id).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Check-out (vehicle drop-off) with CHECK_OUT inspection + end odometer")
+    @PostMapping("/{id}/check-out")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> checkOut(
+            @PathVariable UUID id,
+            @RequestBody CheckOutRequest request) {
+        return rentalUseCase.checkOut(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Settle return — apply caution deduction/refund and complete")
+    @PutMapping("/{id}/settle-return")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> settleReturn(
+            @PathVariable UUID id,
+            @RequestBody CheckoutSettlementRequest request) {
+        return rentalUseCase.settleReturn(id, request).map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Client active reservations")

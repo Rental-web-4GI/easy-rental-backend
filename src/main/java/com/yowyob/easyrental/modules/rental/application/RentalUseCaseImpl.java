@@ -11,7 +11,11 @@ import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRe
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
 import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
+import com.yowyob.easyrental.modules.rental.domain.PaymentEntity;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckOutRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
@@ -21,6 +25,10 @@ import com.yowyob.easyrental.shared.dto.ScheduleRequestDTO;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.PaymentRepositoryPort;
+import com.yowyob.easyrental.modules.inspection.domain.port.in.InspectionUseCase;
+import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
+import com.yowyob.easyrental.modules.tracking.domain.port.in.TrackingUseCase;
 import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
 import com.yowyob.easyrental.modules.vehicle.domain.port.in.VehicleUseCase;
 import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
@@ -34,6 +42,7 @@ import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import com.yowyob.easyrental.shared.enums.RentalStatus;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -47,6 +56,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RentalUseCaseImpl implements RentalUseCase {
 
@@ -62,6 +72,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final VehicleUseCase vehicleService;
     private final DriverUseCase driverService;
     private final AuthUserPort authUserPort;
+    private final PaymentRepositoryPort paymentRepository;
+    private final InspectionUseCase inspectionUseCase;
+    private final TrackingUseCase trackingUseCase;
 
     // CORRECTION : PENDING est remis ici pour que le client puisse voir son "panier" et le payer
     private static final List<RentalStatus> RESERVATION_ACTIVE_STATUSES = Arrays.asList(
@@ -313,8 +326,14 @@ public class RentalUseCaseImpl implements RentalUseCase {
             }));
     }
 
+    /**
+     * @deprecated R2 — remplacé par {@link #checkIn(UUID, CheckInRequest)} qui capture
+     *     l'inspection CHECK_IN + le kilométrage de départ. Conservé pour rétro-compat.
+     */
+    @Deprecated
     @Transactional
     public Mono<RentalEntity> startRental(UUID rentalId) {
+        log.warn("startRental(rentalId={}) is deprecated — use /check-in instead", rentalId);
         return rentalRepository.findById(rentalId)
             .filter(r -> r.getStatus() == RentalStatus.PAID)
             .switchIfEmpty(Mono.error(new RentalConflictException("Rental must be fully paid (PAID) before start.")))
@@ -408,6 +427,165 @@ public class RentalUseCaseImpl implements RentalUseCase {
                      )
                  ).thenReturn(saved));
             });
+    }
+
+    // =====================================================================
+    // R2 — Cycle location complet : check-in / signal-end / check-out / settle
+    // =====================================================================
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> checkIn(UUID rentalId, CheckInRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.PAID) {
+                    return Mono.error(new ValidationException("MUST_BE_PAID"));
+                }
+                InspectionCreateRequest forced = forceInspectionType(request.inspection(), "CHECK_IN");
+                return inspectionUseCase.createInspection(rentalId, forced)
+                    .then(Mono.defer(() -> {
+                        rental.setStartOdometer(request.startOdometer());
+                        rental.setStatus(RentalStatus.ONGOING);
+                        rental.setUpdatedAt(LocalDateTime.now());
+                        return rentalRepository.save(rental);
+                    }));
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> signalEnd(UUID rentalId) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.ONGOING) {
+                    return Mono.error(new ValidationException("NOT_ONGOING"));
+                }
+                rental.setStatus(RentalStatus.UNDER_REVIEW);
+                rental.setUpdatedAt(LocalDateTime.now());
+                return rentalRepository.save(rental);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> checkOut(UUID rentalId, CheckOutRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.UNDER_REVIEW) {
+                    return Mono.error(new ValidationException("NOT_UNDER_REVIEW"));
+                }
+                InspectionCreateRequest forced = forceInspectionType(request.inspection(), "CHECK_OUT");
+                return inspectionUseCase.createInspection(rentalId, forced)
+                    .then(trackingUseCase.computeTrackedKm(rentalId).defaultIfEmpty(0.0))
+                    .map(gpsKm -> {
+                        rental.setEndOdometer(request.endOdometer());
+                        double km = gpsKm;
+                        if (km <= 0.0 && rental.getStartOdometer() != null && request.endOdometer() != null) {
+                            km = request.endOdometer() - rental.getStartOdometer();
+                        }
+                        rental.setTrackedKm(BigDecimal.valueOf(Math.max(0.0, km))
+                                .setScale(2, java.math.RoundingMode.HALF_UP));
+                        rental.setUpdatedAt(LocalDateTime.now());
+                        return rental;
+                    })
+                    .flatMap(rentalRepository::save);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> settleReturn(UUID rentalId, CheckoutSettlementRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.UNDER_REVIEW) {
+                    return Mono.error(new ValidationException("NOT_UNDER_REVIEW"));
+                }
+                BigDecimal deduction = request.cautionDeduction() == null
+                        ? BigDecimal.ZERO : request.cautionDeduction();
+                BigDecimal held = rental.getCautionHeld() == null
+                        ? BigDecimal.ZERO : rental.getCautionHeld();
+                if (deduction.signum() < 0) {
+                    return Mono.error(new ValidationException("DEDUCTION_NEGATIVE"));
+                }
+                if (deduction.compareTo(held) > 0) {
+                    return Mono.error(new ValidationException("DEDUCTION_EXCEEDS_ESCROW"));
+                }
+                if (deduction.signum() > 0
+                        && (request.retentionReason() == null || request.retentionReason().isBlank())) {
+                    return Mono.error(new ValidationException("REASON_REQUIRED"));
+                }
+
+                BigDecimal refunded = held.subtract(deduction).setScale(2, java.math.RoundingMode.HALF_UP);
+                rental.setCautionDeducted(deduction);
+                rental.setCautionRefunded(refunded);
+                rental.setStatus(RentalStatus.COMPLETED);
+                rental.setUpdatedAt(LocalDateTime.now());
+
+                Mono<Void> refundPayment = refunded.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, refunded, "CAUTION_REFUND", null)).then()
+                        : Mono.empty();
+                Mono<Void> retentionPayment = deduction.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, deduction, "CAUTION_RETENTION", request.retentionReason())).then()
+                        : Mono.empty();
+
+                Mono<Void> escrowUpdate = agencyRepository.findById(rental.getAgencyId())
+                        .flatMap(agency -> {
+                            BigDecimal current = agency.getCautionEscrowBalance() == null
+                                    ? BigDecimal.ZERO : agency.getCautionEscrowBalance();
+                            agency.setCautionEscrowBalance(current.subtract(held));
+                            return agencyRepository.save(agency);
+                        }).then();
+
+                Mono<Void> mileageUpdate = (rental.getStartOdometer() != null && rental.getEndOdometer() != null)
+                        ? vehicleRepository.findById(rental.getVehicleId())
+                            .flatMap(vehicle -> {
+                                double base = vehicle.getKilometrage() == null ? 0.0 : vehicle.getKilometrage();
+                                double delta = rental.getEndOdometer() - rental.getStartOdometer();
+                                vehicle.setKilometrage(base + Math.max(0.0, delta));
+                                return vehicleRepository.save(vehicle);
+                            }).then()
+                        : Mono.empty();
+
+                return rentalRepository.save(rental)
+                        .then(refundPayment)
+                        .then(retentionPayment)
+                        .then(escrowUpdate)
+                        .then(mileageUpdate)
+                        .thenReturn(rental);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    private InspectionCreateRequest forceInspectionType(InspectionCreateRequest src, String type) {
+        if (src == null) {
+            return new InspectionCreateRequest(type, null, null, null, null, null);
+        }
+        return new InspectionCreateRequest(
+                type, src.odometer(), src.fuelLevel(), src.notes(), src.photoUrls(), src.items());
+    }
+
+    private PaymentEntity buildCautionPayment(UUID rentalId, BigDecimal amount, String category, String reason) {
+        return PaymentEntity.builder()
+                .id(UUID.randomUUID())
+                .rentalId(rentalId)
+                .amount(amount)
+                .paymentMethod(PaymentMethod.CASH)
+                .transactionDate(LocalDateTime.now())
+                .transactionRef(reason)
+                .paymentCategory(category)
+                .rentalPortion(BigDecimal.ZERO)
+                .cautionPortion(amount)
+                .isNewRecord(true)
+                .build();
     }
 
     @Transactional
