@@ -30,5 +30,7 @@ public record AgencyResponseDTO(
     Integer totalVehicles,
     Integer totalRentals,
     Double monthlyRevenue,
-    String organizationAccountType
+    String organizationAccountType,
+    Double averageRating,
+    Long ratingsCount
 ) {}

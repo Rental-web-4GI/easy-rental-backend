@@ -39,6 +39,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     private final ApplicationEventPublisher eventPublisher;
     private final KernelClientProperties kernelProperties;
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
+    private final com.yowyob.easyrental.modules.rating.domain.port.in.RatingUseCase ratingUseCase;
 
     @Transactional
     public Mono<AgencyResponseDTO> createAgency(UUID orgId, AgencyRequestDTO request) {
@@ -306,12 +307,21 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     }
 
     private Mono<AgencyResponseDTO> toDtoWithAccountType(AgencyEntity agency) {
-        if (agency.getOrganizationId() == null) {
-            return Mono.just(agencyMapper.toDto(agency, null));
-        }
-        return organizationRepository.findById(agency.getOrganizationId())
-                .map(org -> agencyMapper.toDto(agency, org.getAccountType()))
-                .defaultIfEmpty(agencyMapper.toDto(agency, null));
+        Mono<String> accountTypeMono = agency.getOrganizationId() == null
+                ? Mono.just("")
+                : organizationRepository.findById(agency.getOrganizationId())
+                        .map(org -> org.getAccountType() == null ? "" : org.getAccountType())
+                        .defaultIfEmpty("");
+        Mono<com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO> statsMono =
+                ratingUseCase.getStatsForTarget("AGENCY", agency.getId())
+                        .onErrorReturn(new com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO(
+                                0.0, 0L, java.util.Map.of()));
+        return Mono.zip(accountTypeMono, statsMono)
+                .map(t -> agencyMapper.toDto(
+                        agency,
+                        t.getT1().isEmpty() ? null : t.getT1(),
+                        t.getT2().average(),
+                        t.getT2().count()));
     }
 
     @Transactional

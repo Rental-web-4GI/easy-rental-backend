@@ -7,10 +7,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgencyMapper {
     public AgencyResponseDTO toDto(AgencyEntity entity) {
-        return toDto(entity, null);
+        return toDto(entity, null, null, null);
     }
 
     public AgencyResponseDTO toDto(AgencyEntity entity, String organizationAccountType) {
+        return toDto(entity, organizationAccountType, null, null);
+    }
+
+    public AgencyResponseDTO toDto(AgencyEntity entity, String organizationAccountType,
+            Double averageRating, Long ratingsCount) {
         if (entity == null) {
             return null;
         }
@@ -42,7 +47,9 @@ public class AgencyMapper {
             entity.getTotalVehicles(),
             entity.getTotalRentals(),
             entity.getMonthlyRevenue(),
-            organizationAccountType
+            organizationAccountType,
+            averageRating,
+            ratingsCount
         );
     }
 }
