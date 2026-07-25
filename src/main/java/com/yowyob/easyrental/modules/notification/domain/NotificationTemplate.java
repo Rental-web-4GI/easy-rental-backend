@@ -30,7 +30,18 @@ public enum NotificationTemplate {
 
     // --- ANNULATION ---
     CANCELLATION_CLIENT("Annulation confirmée. Montant payé: %s XAF. Pénalité (5%%): %s XAF. Remboursement: %s XAF."),
-    CANCELLATION_AGENCY("Réservation annulée par le client. Pénalité retenue: %s XAF.");
+    CANCELLATION_AGENCY("Réservation annulée par le client. Pénalité retenue: %s XAF."),
+
+    // --- R2 : CYCLE INSPECTION / CAUTION ---
+    CHECK_IN_DONE_CLIENT("Check-in effectué. Bonne route ! Votre location est active."),
+    CAUTION_COLLECTED_CLIENT("Votre caution de %s XAF est bien enregistrée. Elle vous sera restituée au retour, "
+            + "déduction faite des éventuels dommages constatés."),
+    RETURN_UNDER_REVIEW_AGENCY("Le véhicule est rentré. Effectuez le check-out (inspection de retour) "
+            + "puis réglez la caution."),
+    CAUTION_DEDUCTION_APPLIED_CLIENT("Une retenue de %s XAF a été appliquée sur votre caution. "
+            + "Motif : %s. Montant remboursé : %s XAF."),
+    CAUTION_FULLY_REFUNDED_CLIENT("Votre caution de %s XAF vous est intégralement remboursée. "
+            + "Merci pour votre confiance !");
 
     private final String template;
 

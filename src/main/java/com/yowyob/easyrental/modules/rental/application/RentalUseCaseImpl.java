@@ -26,6 +26,7 @@ import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
 import com.yowyob.easyrental.modules.rental.domain.port.out.PaymentRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalEmailPort;
 import com.yowyob.easyrental.modules.inspection.domain.port.in.InspectionUseCase;
 import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
 import com.yowyob.easyrental.modules.tracking.domain.port.in.TrackingUseCase;
@@ -75,6 +76,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final PaymentRepositoryPort paymentRepository;
     private final InspectionUseCase inspectionUseCase;
     private final TrackingUseCase trackingUseCase;
+    private final RentalEmailPort rentalEmailPort;
 
     // CORRECTION : PENDING est remis ici pour que le client puisse voir son "panier" et le payer
     private static final List<RentalStatus> RESERVATION_ACTIVE_STATUSES = Arrays.asList(
@@ -449,7 +451,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         rental.setStatus(RentalStatus.ONGOING);
                         rental.setUpdatedAt(LocalDateTime.now());
                         return rentalRepository.save(rental);
-                    }));
+                    }))
+                    .flatMap(saved -> notifyClient(saved, NotificationReason.LOCATION_START,
+                            NotificationTemplate.CHECK_IN_DONE_CLIENT).thenReturn(saved));
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
     }
@@ -465,7 +469,12 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 }
                 rental.setStatus(RentalStatus.UNDER_REVIEW);
                 rental.setUpdatedAt(LocalDateTime.now());
-                return rentalRepository.save(rental);
+                return rentalRepository.save(rental)
+                    .flatMap(saved -> notificationService.createNotification(
+                            saved.getId(), saved.getAgencyId(), NotificationResourceType.AGENCY,
+                            NotificationReason.LOCATION_END_SIGNAL, saved.getVehicleId(), saved.getDriverId(),
+                            NotificationTemplate.RETURN_UNDER_REVIEW_AGENCY)
+                        .thenReturn(saved));
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
     }
@@ -555,14 +564,47 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             }).then()
                         : Mono.empty();
 
+                Mono<Void> notifyAndEmail;
+                if (deduction.signum() > 0) {
+                    Mono<Void> inApp = rental.getClientId() != null
+                            ? notificationService.createNotification(
+                                    rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                    NotificationReason.CAUTION_DEDUCTION, rental.getVehicleId(), rental.getDriverId(),
+                                    NotificationTemplate.CAUTION_DEDUCTION_APPLIED_CLIENT,
+                                    deduction, request.retentionReason(), refunded).then()
+                            : Mono.empty();
+                    Mono<Void> email = rentalEmailPort.sendCautionDeduction(
+                            rental.getClientEmail(), deduction, request.retentionReason(), refunded);
+                    notifyAndEmail = inApp.then(email);
+                } else {
+                    Mono<Void> inApp = rental.getClientId() != null
+                            ? notificationService.createNotification(
+                                    rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                    NotificationReason.REFUND_PROCESSED, rental.getVehicleId(), rental.getDriverId(),
+                                    NotificationTemplate.CAUTION_FULLY_REFUNDED_CLIENT, refunded).then()
+                            : Mono.empty();
+                    Mono<Void> email = rentalEmailPort.sendCautionFullyRefunded(rental.getClientEmail(), refunded);
+                    notifyAndEmail = inApp.then(email);
+                }
+
                 return rentalRepository.save(rental)
                         .then(refundPayment)
                         .then(retentionPayment)
                         .then(escrowUpdate)
                         .then(mileageUpdate)
+                        .then(notifyAndEmail)
                         .thenReturn(rental);
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    private Mono<Void> notifyClient(RentalEntity rental, NotificationReason reason, NotificationTemplate template) {
+        if (rental.getClientId() == null) {
+            return Mono.empty();
+        }
+        return notificationService.createNotification(
+                rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                reason, rental.getVehicleId(), rental.getDriverId(), template).then();
     }
 
     private InspectionCreateRequest forceInspectionType(InspectionCreateRequest src, String type) {

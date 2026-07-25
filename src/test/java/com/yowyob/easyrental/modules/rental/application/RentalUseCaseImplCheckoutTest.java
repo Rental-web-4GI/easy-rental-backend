@@ -15,7 +15,9 @@ import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import com.yowyob.easyrental.modules.rental.domain.PaymentEntity;
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
+import com.yowyob.easyrental.modules.notification.dto.NotificationResponseDTO;
 import com.yowyob.easyrental.modules.rental.domain.port.out.PaymentRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalEmailPort;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
 import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
 import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
@@ -67,6 +69,7 @@ class RentalUseCaseImplCheckoutTest {
     @Mock private PaymentRepositoryPort paymentRepository;
     @Mock private InspectionUseCase inspectionUseCase;
     @Mock private TrackingUseCase trackingUseCase;
+    @Mock private RentalEmailPort rentalEmailPort;
 
     private RentalUseCaseImpl useCase;
 
@@ -80,7 +83,14 @@ class RentalUseCaseImplCheckoutTest {
                 rentalRepository, vehicleRepository, agencyRepository, organizationRepository,
                 pricingService, scheduleService, notificationService, rentalPaymentUseCase,
                 agencyMapper, vehicleService, driverService, authUserPort,
-                paymentRepository, inspectionUseCase, trackingUseCase);
+                paymentRepository, inspectionUseCase, trackingUseCase, rentalEmailPort);
+
+        // Notifications + emails are fire-and-forget side-effects — stub broadly.
+        when(notificationService.createNotification(
+                any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(Mono.just(mock(NotificationResponseDTO.class)));
+        when(rentalEmailPort.sendCautionDeduction(any(), any(), any(), any())).thenReturn(Mono.empty());
+        when(rentalEmailPort.sendCautionFullyRefunded(any(), any())).thenReturn(Mono.empty());
     }
 
     private RentalEntity rental(RentalStatus status) {

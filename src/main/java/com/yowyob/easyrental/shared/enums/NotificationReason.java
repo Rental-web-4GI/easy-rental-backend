@@ -10,5 +10,6 @@ public enum NotificationReason {
     CANCELLATION,           // Annulation
     REFUND_PROCESSED,       // Remboursement
     PAYMENT_RECEIVED,       // Paiement reçu
-    MAINTENANCE_SCHEDULED   // Maintenance auto
+    MAINTENANCE_SCHEDULED,  // Maintenance auto
+    CAUTION_DEDUCTION       // R2 : retenue sur caution au checkout
 }
