@@ -44,6 +44,8 @@ class AgencyUseCaseImplTest {
     private KernelClientProperties kernelProperties;
     @Mock
     private com.yowyob.easyrental.modules.rating.domain.port.in.RatingUseCase ratingUseCase;
+    @Mock
+    private com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort userRepository;
 
     @InjectMocks
     private AgencyUseCaseImpl agencyUseCase;

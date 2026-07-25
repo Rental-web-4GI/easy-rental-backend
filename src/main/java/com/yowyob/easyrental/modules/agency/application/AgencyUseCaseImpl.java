@@ -40,6 +40,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     private final KernelClientProperties kernelProperties;
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
     private final com.yowyob.easyrental.modules.rating.domain.port.in.RatingUseCase ratingUseCase;
+    private final com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort userRepository;
 
     @Transactional
     public Mono<AgencyResponseDTO> createAgency(UUID orgId, AgencyRequestDTO request) {
@@ -181,7 +182,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
                 .timezone(request.timezone() != null ? request.timezone() : "Africa/Douala")
                 .workingHours(request.workingHours())
                 .allowOnlineBooking(request.allowOnlineBooking() != null ? request.allowOnlineBooking() : true)
-                .depositPercentage(request.depositPercentage())
+                .depositPercentage(request.depositPercentage() != null ? request.depositPercentage() : 0.0)
                 .logoUrl(request.logoUrl())
                 .primaryColor(request.primaryColor())
                 .secondaryColor(request.secondaryColor())
@@ -316,12 +317,27 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
                 ratingUseCase.getStatsForTarget("AGENCY", agency.getId())
                         .onErrorReturn(new com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO(
                                 0.0, 0L, java.util.Map.of()));
-        return Mono.zip(accountTypeMono, statsMono)
-                .map(t -> agencyMapper.toDto(
-                        agency,
-                        t.getT1().isEmpty() ? null : t.getT1(),
-                        t.getT2().average(),
-                        t.getT2().count()));
+        // Option B : si l'agence n'a pas d'email propre, on résout celui du manager.
+        Mono<String> managerEmailMono = (isBlank(agency.getEmail()) && agency.getManagerId() != null)
+                ? userRepository.findById(agency.getManagerId())
+                        .map(u -> u.getEmail() == null ? "" : u.getEmail())
+                        .defaultIfEmpty("")
+                : Mono.just("");
+        return Mono.zip(accountTypeMono, statsMono, managerEmailMono)
+                .map(t -> {
+                    if (isBlank(agency.getEmail()) && !t.getT3().isEmpty()) {
+                        agency.setEmail(t.getT3());
+                    }
+                    return agencyMapper.toDto(
+                            agency,
+                            t.getT1().isEmpty() ? null : t.getT1(),
+                            t.getT2().average(),
+                            t.getT2().count());
+                });
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     @Transactional

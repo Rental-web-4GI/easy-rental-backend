@@ -466,5 +466,6 @@
     <include file="db/changelog/changes/31-inspections.xml"/>
     <include file="db/changelog/changes/32-inspection-items.xml"/>
     <include file="db/changelog/changes/33-rental-positions.xml"/>
+    <include file="db/changelog/changes/34-agency-deposit-default-zero.xml"/>
 
 </databaseChangeLog>
