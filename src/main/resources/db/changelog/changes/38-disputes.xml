@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!-- Litiges de caution : contestation client d'une retenue, arbitrée par l'admin. -->
+    <changeSet id="38-disputes" author="release3">
+        <sql>
+            CREATE TABLE IF NOT EXISTS disputes (
+                id UUID PRIMARY KEY,
+                rental_id UUID NOT NULL,
+                client_id UUID,
+                agency_id UUID,
+                contested_amount NUMERIC(19,2),
+                reason TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+                admin_note TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                resolved_at TIMESTAMPTZ
+            );
+            CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status);
+            CREATE INDEX IF NOT EXISTS idx_disputes_agency ON disputes(agency_id);
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!-- Suspension d'organisation : statut + horodatage + motif. -->
+    <changeSet id="36-org-suspension" author="release3">
+        <sql>
+            ALTER TABLE organizations ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'ACTIVE';
+            ALTER TABLE organizations ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
+            ALTER TABLE organizations ADD COLUMN IF NOT EXISTS suspension_reason TEXT;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

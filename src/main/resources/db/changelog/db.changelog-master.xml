@@ -468,5 +468,9 @@
     <include file="db/changelog/changes/33-rental-positions.xml"/>
     <include file="db/changelog/changes/34-agency-deposit-default-zero.xml"/>
     <include file="db/changelog/changes/35-rental-supplement-due.xml"/>
+    <include file="db/changelog/changes/36-org-suspension.xml"/>
+    <include file="db/changelog/changes/37-conversations.xml"/>
+    <include file="db/changelog/changes/38-disputes.xml"/>
+    <include file="db/changelog/changes/39-dedup-active-subscriptions.xml"/>
 
 </databaseChangeLog>

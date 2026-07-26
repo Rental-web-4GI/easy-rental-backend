@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!-- Messagerie multi-conversations : conversation à 2 participants + messages. -->
+    <changeSet id="37-conversations" author="release3">
+        <sql>
+            CREATE TABLE IF NOT EXISTS conversations (
+                id UUID PRIMARY KEY,
+                type VARCHAR(16) NOT NULL,
+                participant_a_type VARCHAR(16) NOT NULL,
+                participant_a_id UUID,
+                participant_b_type VARCHAR(16) NOT NULL,
+                participant_b_id UUID,
+                subject VARCHAR(255),
+                a_unread INTEGER DEFAULT 0,
+                b_unread INTEGER DEFAULT 0,
+                last_message_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_conversations_a ON conversations(participant_a_type, participant_a_id);
+            CREATE INDEX IF NOT EXISTS idx_conversations_b ON conversations(participant_b_type, participant_b_id);
+
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                id UUID PRIMARY KEY,
+                conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                sender_type VARCHAR(16) NOT NULL,
+                sender_id UUID,
+                body TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS idx_conversation_messages_conv
+                ON conversation_messages(conversation_id, created_at);
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>
