@@ -9,8 +9,13 @@ import com.yowyob.easyrental.modules.conversation.domain.port.out.ConversationRe
 import com.yowyob.easyrental.modules.conversation.dto.ConversationDTO;
 import com.yowyob.easyrental.modules.conversation.dto.MessageDTO;
 import com.yowyob.easyrental.modules.conversation.mapper.ConversationMapper;
+import com.yowyob.easyrental.modules.notification.domain.NotificationTemplate;
+import com.yowyob.easyrental.modules.notification.domain.port.in.NotificationUseCase;
+import com.yowyob.easyrental.shared.enums.NotificationReason;
+import com.yowyob.easyrental.shared.enums.NotificationResourceType;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -28,10 +33,12 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConversationUseCaseImpl implements ConversationUseCase {
 
     private final ConversationRepositoryPort conversationRepository;
     private final ConversationMapper mapper;
+    private final NotificationUseCase notificationUseCase;
 
     @Override
     public Mono<ConversationEntity> openOrGet(ParticipantType aType, UUID aId, ParticipantType bType, UUID bId) {
@@ -71,6 +78,11 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
                     }
                     conversation.setLastMessageAt(now);
 
+                    ParticipantType recipientType = senderIsA
+                            ? conversation.getParticipantBType() : conversation.getParticipantAType();
+                    UUID recipientId = senderIsA
+                            ? conversation.getParticipantBId() : conversation.getParticipantAId();
+
                     ConversationMessageEntity message = ConversationMessageEntity.builder()
                             .id(UUID.randomUUID())
                             .conversationId(conversationId)
@@ -82,9 +94,35 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
                             .build();
 
                     return conversationRepository.save(conversation)
-                            .then(conversationRepository.saveMessage(message));
+                            .then(conversationRepository.saveMessage(message))
+                            .flatMap(saved -> notifyRecipient(conversationId, recipientType, recipientId)
+                                    .thenReturn(saved));
                 })
                 .map(mapper::toMessageDto);
+    }
+
+    /**
+     * Notifies the recipient of a new message. Best-effort: any failure is
+     * swallowed so it never breaks message sending. Admin recipients are
+     * skipped (no per-user notification inbox for the support pole here).
+     */
+    private Mono<Void> notifyRecipient(UUID conversationId, ParticipantType recipientType, UUID recipientId) {
+        if (recipientType == null || recipientId == null || recipientType == ParticipantType.ADMIN) {
+            return Mono.empty();
+        }
+        NotificationResourceType resourceType = recipientType == ParticipantType.CLIENT
+                ? NotificationResourceType.CLIENT : NotificationResourceType.AGENCY;
+
+        return notificationUseCase.createNotification(
+                        conversationId, recipientId, resourceType,
+                        NotificationReason.MESSAGE, null, null,
+                        NotificationTemplate.NEW_MESSAGE)
+                .then()
+                .onErrorResume(e -> {
+                    log.warn("Failed to notify recipient {} of new message on conversation {}: {}",
+                            recipientId, conversationId, e.getMessage());
+                    return Mono.empty();
+                });
     }
 
     @Override

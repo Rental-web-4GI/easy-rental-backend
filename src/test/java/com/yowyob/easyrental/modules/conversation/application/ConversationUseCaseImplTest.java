@@ -7,12 +7,16 @@ import com.yowyob.easyrental.modules.conversation.domain.ParticipantType;
 import com.yowyob.easyrental.modules.conversation.domain.port.out.ConversationRepositoryPort;
 import com.yowyob.easyrental.modules.conversation.dto.MessageDTO;
 import com.yowyob.easyrental.modules.conversation.mapper.ConversationMapper;
+import com.yowyob.easyrental.modules.notification.domain.port.in.NotificationUseCase;
+import com.yowyob.easyrental.modules.notification.dto.NotificationResponseDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -21,11 +25,13 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ConversationUseCaseImplTest {
 
     @Mock
@@ -33,6 +39,9 @@ class ConversationUseCaseImplTest {
 
     @Mock
     private ConversationMapper mapper;
+
+    @Mock
+    private NotificationUseCase notificationUseCase;
 
     @InjectMocks
     private ConversationUseCaseImpl useCase;
@@ -108,6 +117,8 @@ class ConversationUseCaseImplTest {
         when(repo.saveMessage(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
         when(mapper.toMessageDto(any())).thenReturn(
                 new MessageDTO(UUID.randomUUID(), convId, "CLIENT", clientId, "hi", Instant.now()));
+        when(notificationUseCase.createNotification(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(Mono.just(mock(NotificationResponseDTO.class)));
 
         StepVerifier.create(useCase.sendMessage(convId, ParticipantType.CLIENT, clientId, "hi"))
                 .expectNextCount(1)

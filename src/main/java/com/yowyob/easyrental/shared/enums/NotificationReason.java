@@ -11,5 +11,6 @@ public enum NotificationReason {
     REFUND_PROCESSED,       // Remboursement
     PAYMENT_RECEIVED,       // Paiement reçu
     MAINTENANCE_SCHEDULED,  // Maintenance auto
-    CAUTION_DEDUCTION       // R2 : retenue sur caution au checkout
+    CAUTION_DEDUCTION,      // R2 : retenue sur caution au checkout
+    MESSAGE                 // R3 : nouveau message de conversation
 }

@@ -44,7 +44,10 @@ public enum NotificationTemplate {
             + "Merci pour votre confiance !"),
     CLIENT_DEBT_CREATED("Les dommages ont dépassé votre caution. Il reste %s XAF à régler. "
             + "Ce montant sera ajouté à votre prochaine réservation dans l'une de nos agences, "
-            + "ou réglable directement auprès de l'agence.");
+            + "ou réglable directement auprès de l'agence."),
+
+    // --- MESSAGERIE ---
+    NEW_MESSAGE("Nouveau message reçu.");
 
     private final String template;
 
