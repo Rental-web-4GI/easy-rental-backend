@@ -32,6 +32,12 @@ public interface RentalRepositoryPort {
     /** Dossiers du client avec dette (supplément) impayée dans les agences d'une organisation. */
     Flux<RentalEntity> findClientDebtRentals(UUID clientId, UUID orgId);
 
+    /** Toutes les dettes impayées d'une organisation. */
+    Flux<RentalEntity> findOrganizationDebts(UUID orgId);
+
+    /** Dettes impayées rattachées à une agence. */
+    Flux<RentalEntity> findAgencyDebts(UUID agencyId);
+
     Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end);
 
     Mono<Long> count();

@@ -60,6 +60,16 @@ public class RentalRepositoryAdapter implements RentalRepositoryPort {
     }
 
     @Override
+    public Flux<RentalEntity> findOrganizationDebts(UUID orgId) {
+        return rentalRepository.findOrganizationDebts(orgId);
+    }
+
+    @Override
+    public Flux<RentalEntity> findAgencyDebts(UUID agencyId) {
+        return rentalRepository.findAgencyDebts(agencyId);
+    }
+
+    @Override
     public Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end) {
         return rentalRepository.countConflictingRentals(vehicleId, start, end);
     }

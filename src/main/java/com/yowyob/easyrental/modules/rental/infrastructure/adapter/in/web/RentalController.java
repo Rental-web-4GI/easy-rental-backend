@@ -157,6 +157,29 @@ public class RentalController {
         return rentalUseCase.collectSupplement(id, body.get("amount")).map(ResponseEntity::ok);
     }
 
+    @Operation(summary = "Client's outstanding debt within the given agency's organization")
+    @GetMapping("/debt/client/{clientId}/agency/{agencyId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF','CLIENT')")
+    public Mono<ResponseEntity<java.util.Map<String, java.math.BigDecimal>>> clientDebt(
+            @PathVariable UUID clientId, @PathVariable UUID agencyId) {
+        return rentalUseCase.getClientDebtForAgency(clientId, agencyId)
+                .map(d -> ResponseEntity.ok(java.util.Map.of("debt", d)));
+    }
+
+    @Operation(summary = "All unpaid debts of an organization")
+    @GetMapping("/debts/organization/{orgId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF')")
+    public Flux<RentalEntity> organizationDebts(@PathVariable UUID orgId) {
+        return rentalUseCase.getOrganizationDebts(orgId);
+    }
+
+    @Operation(summary = "All unpaid debts attached to an agency")
+    @GetMapping("/debts/agency/{agencyId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF')")
+    public Flux<RentalEntity> agencyDebts(@PathVariable UUID agencyId) {
+        return rentalUseCase.getAgencyDebts(agencyId);
+    }
+
     @Operation(summary = "Client active reservations")
     @GetMapping("/client/reservations/active")
     public Flux<RentalEntity> getClientActiveReservations() {

@@ -638,6 +638,27 @@ public class RentalUseCaseImpl implements RentalUseCase {
             .flatMap(saved -> getRentalDetails(saved.getId()));
     }
 
+    @Override
+    public Mono<BigDecimal> getClientDebtForAgency(UUID clientId, UUID agencyId) {
+        return agencyRepository.findById(agencyId)
+            .flatMap(agency -> agency.getOrganizationId() == null
+                ? Mono.just(BigDecimal.ZERO)
+                : rentalRepository.findClientDebtRentals(clientId, agency.getOrganizationId())
+                    .map(r -> r.getSupplementDue() == null ? BigDecimal.ZERO : r.getSupplementDue())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add))
+            .defaultIfEmpty(BigDecimal.ZERO);
+    }
+
+    @Override
+    public Flux<RentalEntity> getOrganizationDebts(UUID orgId) {
+        return rentalRepository.findOrganizationDebts(orgId);
+    }
+
+    @Override
+    public Flux<RentalEntity> getAgencyDebts(UUID agencyId) {
+        return rentalRepository.findAgencyDebts(agencyId);
+    }
+
     private Mono<Void> notifyClient(RentalEntity rental, NotificationReason reason, NotificationTemplate template) {
         if (rental.getClientId() == null) {
             return Mono.empty();

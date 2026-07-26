@@ -42,6 +42,25 @@ public interface RentalRepository extends R2dbcRepository<RentalEntity, UUID> {
     """)
     Flux<RentalEntity> findClientDebtRentals(UUID clientId, UUID orgId);
 
+    /** Toutes les dettes (suppléments impayés) d'une organisation, plus récentes d'abord. */
+    @Query("""
+        SELECT r.*
+        FROM rentals r
+        JOIN agencies a ON r.agency_id = a.id
+        WHERE a.organization_id = :orgId
+        AND COALESCE(r.supplement_due, 0) > 0
+        ORDER BY r.updated_at DESC
+    """)
+    Flux<RentalEntity> findOrganizationDebts(UUID orgId);
+
+    /** Dettes rattachées à une agence précise. */
+    @Query("""
+        SELECT * FROM rentals
+        WHERE agency_id = :agencyId AND COALESCE(supplement_due, 0) > 0
+        ORDER BY updated_at DESC
+    """)
+    Flux<RentalEntity> findAgencyDebts(UUID agencyId);
+
     // NOUVEAU : Chercher une réservation PENDING existante pour éviter les doublons
     @Query("SELECT * FROM rentals WHERE client_id = :clientId AND vehicle_id = :vehicleId AND status = 'PENDING' LIMIT"
             + " 1")

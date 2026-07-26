@@ -32,6 +32,12 @@ public interface RentalUseCase {
     Mono<RentalDetailResponseDTO> checkOut(UUID rentalId, CheckOutRequest request);
     Mono<RentalDetailResponseDTO> settleReturn(UUID rentalId, CheckoutSettlementRequest request);
     Mono<RentalDetailResponseDTO> collectSupplement(UUID rentalId, java.math.BigDecimal amount);
+    /** Dette totale du client dans l'organisation de l'agence donnée. */
+    Mono<java.math.BigDecimal> getClientDebtForAgency(UUID clientId, UUID agencyId);
+    /** Dettes impayées d'une organisation (dossiers). */
+    Flux<RentalEntity> getOrganizationDebts(UUID orgId);
+    /** Dettes impayées d'une agence (dossiers). */
+    Flux<RentalEntity> getAgencyDebts(UUID agencyId);
     Mono<RentalEntity> cancelRental(UUID rentalId);
     Flux<RentalEntity> getClientActiveReservations(UUID clientId);
     Flux<RentalEntity> getClientRentalsHistory(UUID clientId);
