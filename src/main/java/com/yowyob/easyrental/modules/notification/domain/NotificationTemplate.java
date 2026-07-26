@@ -41,7 +41,10 @@ public enum NotificationTemplate {
     CAUTION_DEDUCTION_APPLIED_CLIENT("Une retenue de %s XAF a été appliquée sur votre caution. "
             + "Motif : %s. Montant remboursé : %s XAF."),
     CAUTION_FULLY_REFUNDED_CLIENT("Votre caution de %s XAF vous est intégralement remboursée. "
-            + "Merci pour votre confiance !");
+            + "Merci pour votre confiance !"),
+    CLIENT_DEBT_CREATED("Les dommages ont dépassé votre caution. Il reste %s XAF à régler. "
+            + "Ce montant sera ajouté à votre prochaine réservation dans l'une de nos agences, "
+            + "ou réglable directement auprès de l'agence.");
 
     private final String template;
 

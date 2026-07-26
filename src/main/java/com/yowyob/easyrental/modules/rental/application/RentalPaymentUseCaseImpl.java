@@ -41,9 +41,19 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
     public Mono<RentalEntity> processPayment(UUID rentalId, PaymentRequest request) {
         return rentalRepository.findById(rentalId)
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
-            .flatMap(rental -> {
-                BigDecimal amount = request.amount();
+            .flatMap(rental -> settleClientDebtsFirst(rental, request.amount())
+                .flatMap(remaining -> remaining.signum() <= 0
+                        ? rentalRepository.save(rental)
+                        : allocatePayment(rental, remaining, request)));
+    }
 
+    /**
+     * Alloue le paiement (net de la dette éventuellement épongée) sur la location :
+     * ventilation location/caution, statut, revenus, notifications.
+     */
+    private Mono<RentalEntity> allocatePayment(RentalEntity rental, BigDecimal amount, PaymentRequest request) {
+        final UUID rentalId = rental.getId();
+        {
                 // R2 proportional allocation: split the incoming amount between the rental fee
                 // (agency revenue) and the caution (agency escrow), pro-rata to rentalAmount/cautionAmount.
                 // Legacy rentals (created before the R2 pricing breakdown) have no rentalAmount/
@@ -223,7 +233,77 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
                         .then(notifyReservationSuccess)
                         .then(rentalRepository.save(rental));
                 });
+        }
+    }
+
+    /**
+     * Épongé la dette (supplément impayé) du client dans l'organisation de l'agence courante,
+     * dossiers les plus anciens d'abord. Le revenu va à l'agence lésée (celle du dossier en dette).
+     * Retourne le montant restant après règlement de la dette.
+     */
+    private Mono<BigDecimal> settleClientDebtsFirst(RentalEntity rental, BigDecimal fullAmount) {
+        if (rental.getClientId() == null || fullAmount == null || fullAmount.signum() <= 0) {
+            return Mono.just(fullAmount == null ? BigDecimal.ZERO : fullAmount);
+        }
+        return agencyRepository.findById(rental.getAgencyId())
+            .flatMap(ag -> ag.getOrganizationId() == null
+                ? Mono.just(fullAmount)
+                : settleClientDebts(rental.getClientId(), ag.getOrganizationId(), rental.getId(), fullAmount)
+                    .map(fullAmount::subtract))
+            .defaultIfEmpty(fullAmount);
+    }
+
+    /** Règle les dettes du client (org-scoped) à hauteur de {@code available}. Retourne le montant consommé. */
+    private Mono<BigDecimal> settleClientDebts(UUID clientId, UUID orgId, UUID excludeRentalId, BigDecimal available) {
+        return rentalRepository.findClientDebtRentals(clientId, orgId)
+            .filter(dr -> !dr.getId().equals(excludeRentalId))
+            .collectList()
+            .flatMap(debts -> {
+                BigDecimal remaining = available;
+                BigDecimal consumed = BigDecimal.ZERO;
+                java.util.List<Mono<Void>> ops = new java.util.ArrayList<>();
+                for (RentalEntity dr : debts) {
+                    if (remaining.signum() <= 0) {
+                        break;
+                    }
+                    BigDecimal due = dr.getSupplementDue() == null ? BigDecimal.ZERO : dr.getSupplementDue();
+                    if (due.signum() <= 0) {
+                        continue;
+                    }
+                    BigDecimal pay = due.min(remaining);
+                    remaining = remaining.subtract(pay);
+                    consumed = consumed.add(pay);
+                    dr.setSupplementDue(due.subtract(pay));
+                    dr.setUpdatedAt(LocalDateTime.now());
+                    PaymentEntity supPay = PaymentEntity.builder()
+                            .id(UUID.randomUUID())
+                            .rentalId(dr.getId())
+                            .amount(pay)
+                            .paymentMethod(request0Method())
+                            .transactionDate(LocalDateTime.now())
+                            .transactionRef("SUPP-" + System.currentTimeMillis())
+                            .paymentCategory("SUPPLEMENT_PAID")
+                            .rentalPortion(pay)          // encaissement de la dette = revenu
+                            .cautionPortion(BigDecimal.ZERO)
+                            .isNewRecord(true)
+                            .build();
+                    final BigDecimal payFinal = pay;
+                    ops.add(rentalRepository.save(dr)
+                            .then(paymentRepository.save(supPay))
+                            .then(agencyRepository.findById(dr.getAgencyId())
+                                    .flatMap(ag -> {
+                                        double rev = ag.getMonthlyRevenue() == null ? 0.0 : ag.getMonthlyRevenue();
+                                        ag.setMonthlyRevenue(rev + payFinal.doubleValue());
+                                        return agencyRepository.save(ag);
+                                    }).then()));
+                }
+                BigDecimal consumedFinal = consumed;
+                return Mono.when(ops).thenReturn(consumedFinal);
             });
+    }
+
+    private com.yowyob.easyrental.shared.enums.PaymentMethod request0Method() {
+        return com.yowyob.easyrental.shared.enums.PaymentMethod.CASH;
     }
 
     /**

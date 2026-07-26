@@ -587,6 +587,14 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     notifyAndEmail = inApp.then(email);
                 }
 
+                // Notification de dette si les dommages dépassent la caution.
+                Mono<Void> debtNotify = (supplement.signum() > 0 && rental.getClientId() != null)
+                        ? notificationService.createNotification(
+                                rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                NotificationReason.CAUTION_DEDUCTION, rental.getVehicleId(), rental.getDriverId(),
+                                NotificationTemplate.CLIENT_DEBT_CREATED, supplement).then()
+                        : Mono.empty();
+
                 return rentalRepository.save(rental)
                         .then(refundPayment)
                         .then(retentionPayment)
@@ -594,6 +602,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         .then(escrowUpdate)
                         .then(mileageUpdate)
                         .then(notifyAndEmail)
+                        .then(debtNotify)
                         .thenReturn(rental);
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
