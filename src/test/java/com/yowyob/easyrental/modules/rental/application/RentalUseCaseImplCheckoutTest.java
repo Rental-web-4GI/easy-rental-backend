@@ -70,6 +70,7 @@ class RentalUseCaseImplCheckoutTest {
     @Mock private InspectionUseCase inspectionUseCase;
     @Mock private TrackingUseCase trackingUseCase;
     @Mock private RentalEmailPort rentalEmailPort;
+    @Mock private com.yowyob.easyrental.modules.loyalty.domain.port.in.LoyaltyUseCase loyaltyUseCase;
 
     private RentalUseCaseImpl useCase;
 
@@ -83,7 +84,7 @@ class RentalUseCaseImplCheckoutTest {
                 rentalRepository, vehicleRepository, agencyRepository, organizationRepository,
                 pricingService, scheduleService, notificationService, rentalPaymentUseCase,
                 agencyMapper, vehicleService, driverService, authUserPort,
-                paymentRepository, inspectionUseCase, trackingUseCase, rentalEmailPort);
+                paymentRepository, inspectionUseCase, trackingUseCase, rentalEmailPort, loyaltyUseCase);
 
         // Notifications + emails are fire-and-forget side-effects — stub broadly.
         when(notificationService.createNotification(
@@ -91,6 +92,32 @@ class RentalUseCaseImplCheckoutTest {
                 .thenReturn(Mono.just(mock(NotificationResponseDTO.class)));
         when(rentalEmailPort.sendCautionDeduction(any(), any(), any(), any())).thenReturn(Mono.empty());
         when(rentalEmailPort.sendCautionFullyRefunded(any(), any())).thenReturn(Mono.empty());
+        // R3 : gain de points au checkout (fire-and-forget) — stub.
+        when(loyaltyUseCase.earnFromRental(any(), any(), any())).thenReturn(Mono.just(0));
+    }
+
+    @Test
+    void settleReturn_awardsLoyaltyPoints() {
+        RentalEntity r = rental(RentalStatus.UNDER_REVIEW);
+        r.setClientId(UUID.randomUUID());
+        r.setRentalAmountPaid(new BigDecimal("105000"));
+        when(rentalRepository.findById(rentalId)).thenReturn(Mono.just(r));
+        when(rentalRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(paymentRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        AgencyEntity agency = AgencyEntity.builder().id(agencyId)
+                .cautionEscrowBalance(new BigDecimal("30000.00")).monthlyRevenue(0.0).build();
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(agency));
+        when(agencyRepository.save(any())).thenAnswer(inv -> Mono.just(inv.getArgument(0)));
+        when(agencyMapper.toDto(any())).thenReturn(mock(AgencyResponseDTO.class));
+        when(vehicleService.getVehicleById(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(useCase.settleReturn(rentalId,
+                        new CheckoutSettlementRequest(BigDecimal.ZERO, null)))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Gain calculé sur la part location encaissée (105000 → géré par LoyaltyUseCase).
+        verify(loyaltyUseCase).earnFromRental(any(), any(), any());
     }
 
     private RentalEntity rental(RentalStatus status) {

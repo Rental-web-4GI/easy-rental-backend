@@ -77,6 +77,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final InspectionUseCase inspectionUseCase;
     private final TrackingUseCase trackingUseCase;
     private final RentalEmailPort rentalEmailPort;
+    private final com.yowyob.easyrental.modules.loyalty.domain.port.in.LoyaltyUseCase loyaltyUseCase;
 
     // CORRECTION : PENDING est remis ici pour que le client puisse voir son "panier" et le payer
     private static final List<RentalStatus> RESERVATION_ACTIVE_STATUSES = Arrays.asList(
@@ -140,17 +141,30 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         var driverPrice = tuple.getT2();
                         var agency = tuple.getT3();
 
-                        BigDecimal baseAmount = RentalDurationCalculator.computeBaseAmount(
+                        BigDecimal rawBase = RentalDurationCalculator.computeBaseAmount(
                             request.startDate(), request.endDate(), request.rentalType(),
                             vehiclePrice, hasDriverSelected ? driverPrice : null);
+                        // R3 : remise fidélité = min(points × 10, 50% de la base location).
+                        int redeemPts = request.redeemPoints() == null ? 0 : Math.max(0, request.redeemPoints());
+                        BigDecimal loyaltyDiscount = redeemPts > 0
+                            ? BigDecimal.valueOf((long) redeemPts * 10)
+                                .min(rawBase.multiply(new BigDecimal("0.5")))
+                                .setScale(2, java.math.RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+                        BigDecimal baseAmount = rawBase.subtract(loyaltyDiscount).max(BigDecimal.ZERO);
                         RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
                             baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
                         BigDecimal commission = breakdown.commissionAmount();
                         BigDecimal deposit = breakdown.requestedUpfront();
                         BigDecimal totalFinal = breakdown.totalDue();
 
+                        // R3 : on débite les points d'abord (échoue si solde insuffisant) puis on crée la résa.
+                        Mono<Void> doRedeem = redeemPts > 0
+                            ? loyaltyUseCase.redeem(clientId, redeemPts, null).then()
+                            : Mono.empty();
+
                         // SOLUTION ANTI-DOUBLON : On cherche si une réservation PENDING existe déjà
-                        return rentalRepository.findExistingPendingRental(clientId, request.vehicleId())
+                        return doRedeem.then(rentalRepository.findExistingPendingRental(clientId, request.vehicleId())
                             .flatMap(existingRental -> {
                                 // Mise à jour de la réservation existante (Upsert)
                                 existingRental.setDriverId(request.driverId());
@@ -207,7 +221,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 String.format(NotificationTemplate.RESERVATION_INIT_CLIENT.getTemplate(),
                                     breakdown.requestedUpfront()),
                                 saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
-                                breakdown
+                                breakdown, loyaltyDiscount
                             ))
                             // Notification agence : nouvelle réservation reçue
                             .flatMap(response -> notificationService.createNotification(
@@ -218,7 +232,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 request.vehicleId(),
                                 request.driverId(),
                                 NotificationTemplate.RESERVATION_INIT_AGENCY
-                            ).thenReturn(response));
+                            ).thenReturn(response)));
                     });
                 })));
     }
@@ -299,7 +313,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         RentalInitResponse created = new RentalInitResponse(
                             true, "Réservation agence créée.",
                             saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
-                            breakdown
+                            breakdown, java.math.BigDecimal.ZERO
                         );
                         if (counterAmount.compareTo(BigDecimal.ZERO) <= 0) {
                             return Mono.just(created);
@@ -309,7 +323,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             .thenReturn(new RentalInitResponse(
                                 true, "Réservation confirmée — acompte encaissé au comptoir.",
                                 saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
-                                breakdown
+                                breakdown, java.math.BigDecimal.ZERO
                             ));
                     });
                     });
@@ -595,6 +609,13 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 NotificationTemplate.CLIENT_DEBT_CREATED, supplement).then()
                         : Mono.empty();
 
+                // R3 : gain de points de fidélité sur la part location encaissée (COMPLETED).
+                Mono<Void> earnLoyalty = rental.getClientId() != null
+                        ? loyaltyUseCase.earnFromRental(rental.getClientId(),
+                                rental.getRentalAmountPaid() == null ? BigDecimal.ZERO : rental.getRentalAmountPaid(),
+                                rental.getId()).then()
+                        : Mono.empty();
+
                 return rentalRepository.save(rental)
                         .then(refundPayment)
                         .then(retentionPayment)
@@ -603,6 +624,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         .then(mileageUpdate)
                         .then(notifyAndEmail)
                         .then(debtNotify)
+                        .then(earnLoyalty)
                         .thenReturn(rental);
             })
             .flatMap(saved -> getRentalDetails(saved.getId()));
