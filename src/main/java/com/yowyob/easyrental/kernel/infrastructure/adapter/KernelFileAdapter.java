@@ -67,6 +67,22 @@ public class KernelFileAdapter {
                             + " Mo). Limite : " + (maxBytes / 1024 / 1024) + " Mo."));
         }
         log.info("[kernel-file] uploading {} ({} bytes)", filename, bytes.length);
+
+        // File-core est un appel MACHINE (X-Client-Id/X-Api-Key + token app).
+        // On force un token app frais (le kernel invalide l'ancien sur nouvelle session),
+        // et on retente une fois sur 401 avec un token re-rafraîchi.
+        return appTokenProvider.freshToken()
+                .flatMap(freshOpt -> doUpload(bytes, filename, contentType,
+                        freshOpt.or(context::bearerToken).orElse(null)))
+                .onErrorResume(err -> err.getMessage() != null && err.getMessage().contains("401")
+                        ? appTokenProvider.freshToken()
+                                .flatMap(freshOpt -> doUpload(bytes, filename, contentType,
+                                        freshOpt.or(context::bearerToken).orElse(null)))
+                        : Mono.error(err));
+    }
+
+    private Mono<KernelFileResult> doUpload(byte[] bytes, String filename,
+                                            MediaType contentType, String bearer) {
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("file", new ByteArrayResource(bytes) {
             @Override
@@ -79,9 +95,6 @@ public class KernelFileAdapter {
                 .uri("/api/files")
                 .headers(headers -> {
                     applyMachineHeaders(headers);
-                    String bearer = context.bearerToken()
-                            .or(appTokenProvider::currentToken)
-                            .orElse(null);
                     if (bearer != null) {
                         headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
                     }
