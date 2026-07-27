@@ -22,4 +22,6 @@ public interface OrganizationRepository extends R2dbcRepository<OrganizationEnti
     Mono<Long> countByAccountType(String accountType);
 
     Mono<Long> countByGovernanceStatus(String governanceStatus);
+
+    Mono<Long> countByStatus(String status);
 }

@@ -51,6 +51,7 @@ public record PlatformStatsDTO(
 
     public record RevenueSummary(
             BigDecimal monthlyRecurringRevenue,
-            long subscriptionsActiveCount
+            long subscriptionsActiveCount,
+            BigDecimal totalOutstandingDebt
     ) {}
 }

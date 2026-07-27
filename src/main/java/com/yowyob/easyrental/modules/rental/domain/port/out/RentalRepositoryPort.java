@@ -38,6 +38,9 @@ public interface RentalRepositoryPort {
     /** Dettes impayées rattachées à une agence. */
     Flux<RentalEntity> findAgencyDebts(UUID agencyId);
 
+    /** Somme des suppléments impayés (dettes) sur toute la plateforme. */
+    Mono<java.math.BigDecimal> sumOutstandingDebt();
+
     Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end);
 
     Mono<Long> count();

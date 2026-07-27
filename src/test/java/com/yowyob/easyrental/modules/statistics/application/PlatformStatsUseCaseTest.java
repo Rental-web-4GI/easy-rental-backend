@@ -54,6 +54,8 @@ class PlatformStatsUseCaseTest {
         when(organizationRepository.countByAccountType("COMPANY")).thenReturn(Mono.just(20L));
         when(organizationRepository.countByAccountType("FREELANCE")).thenReturn(Mono.just(5L));
         when(organizationRepository.countByGovernanceStatus("REJECTED")).thenReturn(Mono.just(2L));
+        when(organizationRepository.countByStatus("SUSPENDED")).thenReturn(Mono.just(1L));
+        when(rentalRepository.sumOutstandingDebt()).thenReturn(Mono.just(java.math.BigDecimal.ZERO));
 
         // Agencies
         when(agencyRepository.count()).thenReturn(Mono.just(40L));
@@ -85,7 +87,7 @@ class PlatformStatsUseCaseTest {
                     org.assertj.core.api.Assertions.assertThat(stats.organizations().total()).isEqualTo(25L);
                     org.assertj.core.api.Assertions.assertThat(stats.organizations().companies()).isEqualTo(20L);
                     org.assertj.core.api.Assertions.assertThat(stats.organizations().freelances()).isEqualTo(5L);
-                    org.assertj.core.api.Assertions.assertThat(stats.organizations().suspended()).isEqualTo(2L);
+                    org.assertj.core.api.Assertions.assertThat(stats.organizations().suspended()).isEqualTo(1L);
 
                     // Agencies : 40 agences / 20 companies = 2.0 en moyenne
                     org.assertj.core.api.Assertions.assertThat(stats.agencies().total()).isEqualTo(40L);
@@ -122,6 +124,8 @@ class PlatformStatsUseCaseTest {
         when(organizationRepository.countByAccountType("COMPANY")).thenReturn(Mono.just(0L));
         when(organizationRepository.countByAccountType("FREELANCE")).thenReturn(Mono.just(0L));
         when(organizationRepository.countByGovernanceStatus("REJECTED")).thenReturn(Mono.just(0L));
+        when(organizationRepository.countByStatus("SUSPENDED")).thenReturn(Mono.just(0L));
+        when(rentalRepository.sumOutstandingDebt()).thenReturn(Mono.just(java.math.BigDecimal.ZERO));
 
         when(agencyRepository.count()).thenReturn(Mono.just(0L));
 

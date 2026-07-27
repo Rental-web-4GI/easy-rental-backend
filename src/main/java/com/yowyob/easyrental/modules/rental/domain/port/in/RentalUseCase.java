@@ -38,6 +38,8 @@ public interface RentalUseCase {
     Flux<RentalEntity> getOrganizationDebts(UUID orgId);
     /** Dettes impayées d'une agence (dossiers). */
     Flux<RentalEntity> getAgencyDebts(UUID agencyId);
+    /** Somme des dettes impayées sur toute la plateforme (admin). */
+    Mono<java.math.BigDecimal> getTotalOutstandingDebt();
     Mono<RentalEntity> cancelRental(UUID rentalId);
     Flux<RentalEntity> getClientActiveReservations(UUID clientId);
     Flux<RentalEntity> getClientRentalsHistory(UUID clientId);

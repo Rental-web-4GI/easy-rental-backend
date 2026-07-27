@@ -681,6 +681,11 @@ public class RentalUseCaseImpl implements RentalUseCase {
         return rentalRepository.findAgencyDebts(agencyId);
     }
 
+    @Override
+    public Mono<BigDecimal> getTotalOutstandingDebt() {
+        return rentalRepository.sumOutstandingDebt().defaultIfEmpty(BigDecimal.ZERO);
+    }
+
     private Mono<Void> notifyClient(RentalEntity rental, NotificationReason reason, NotificationTemplate template) {
         if (rental.getClientId() == null) {
             return Mono.empty();

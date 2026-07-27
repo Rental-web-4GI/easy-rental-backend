@@ -70,6 +70,11 @@ public class RentalRepositoryAdapter implements RentalRepositoryPort {
     }
 
     @Override
+    public Mono<java.math.BigDecimal> sumOutstandingDebt() {
+        return rentalRepository.sumOutstandingDebt();
+    }
+
+    @Override
     public Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end) {
         return rentalRepository.countConflictingRentals(vehicleId, start, end);
     }

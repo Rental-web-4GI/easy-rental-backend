@@ -65,4 +65,9 @@ public class OrganizationRepositoryAdapter implements OrganizationRepositoryPort
     public Mono<Long> countByGovernanceStatus(String governanceStatus) {
         return organizationRepository.countByGovernanceStatus(governanceStatus);
     }
+
+    @Override
+    public Mono<Long> countByStatus(String status) {
+        return organizationRepository.countByStatus(status);
+    }
 }

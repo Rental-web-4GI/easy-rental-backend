@@ -61,6 +61,9 @@ public interface RentalRepository extends R2dbcRepository<RentalEntity, UUID> {
     """)
     Flux<RentalEntity> findAgencyDebts(UUID agencyId);
 
+    @Query("SELECT COALESCE(SUM(supplement_due), 0) FROM rentals WHERE COALESCE(supplement_due,0) > 0")
+    Mono<java.math.BigDecimal> sumOutstandingDebt();
+
     // NOUVEAU : Chercher une réservation PENDING existante pour éviter les doublons
     @Query("SELECT * FROM rentals WHERE client_id = :clientId AND vehicle_id = :vehicleId AND status = 'PENDING' LIMIT"
             + " 1")

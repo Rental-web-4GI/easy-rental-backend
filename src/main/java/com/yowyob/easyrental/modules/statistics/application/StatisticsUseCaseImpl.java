@@ -417,7 +417,7 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 organizationRepository.count(),
                 organizationRepository.countByAccountType("COMPANY"),
                 organizationRepository.countByAccountType("FREELANCE"),
-                organizationRepository.countByGovernanceStatus("REJECTED")
+                organizationRepository.countByStatus("SUSPENDED").defaultIfEmpty(0L)
         ).map(t -> new PlatformStatsDTO.OrgCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
 
         Mono<PlatformStatsDTO.AgencyCounts> agencyCountsMono = Mono.zip(
@@ -442,12 +442,16 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 rentalRepository.countCompletedThisMonth()
         ).map(t -> new PlatformStatsDTO.RentalCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
 
+        Mono<BigDecimal> outstandingDebtMono = rentalRepository.sumOutstandingDebt()
+                .defaultIfEmpty(BigDecimal.ZERO);
         Mono<PlatformStatsDTO.RevenueSummary> revenueMono = Mono.zip(
                 subscriptionRepository.sumActivePlanPrices().defaultIfEmpty(BigDecimal.ZERO),
-                subscriptionRepository.countActiveOrganizations().defaultIfEmpty(0L)
+                subscriptionRepository.countActiveOrganizations().defaultIfEmpty(0L),
+                outstandingDebtMono
         ).map(t -> new PlatformStatsDTO.RevenueSummary(
                 t.getT1() != null ? t.getT1() : BigDecimal.ZERO,
-                t.getT2()
+                t.getT2(),
+                t.getT3() != null ? t.getT3() : BigDecimal.ZERO
         ));
 
         return Mono.zip(userCountsMono, orgCountsMono, agencyCountsMono, vehicleCountsMono,
