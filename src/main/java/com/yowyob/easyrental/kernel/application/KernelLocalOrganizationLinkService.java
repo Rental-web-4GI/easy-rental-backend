@@ -130,11 +130,15 @@ public class KernelLocalOrganizationLinkService {
         if (!hasText(name)) {
             name = fallbackName;
         }
+        // Propager le type de compte du propriétaire (FREELANCE / COMPANY) — sinon le
+        // défaut Lombok "COMPANY" écrase silencieusement un compte freelance.
+        String accountType = hasText(owner.getAccountType()) ? owner.getAccountType() : "COMPANY";
 
         OrganizationEntity.OrganizationEntityBuilder builder = OrganizationEntity.builder()
                 .id(UUID.randomUUID())
                 .ownerId(owner.getId())
                 .name(name)
+                .accountType(accountType)
                 .email(owner.getEmail())
                 .country("CM")
                 .timezone("Africa/Douala")
