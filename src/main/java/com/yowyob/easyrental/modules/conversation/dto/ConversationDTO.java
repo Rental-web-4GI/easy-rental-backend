@@ -15,8 +15,10 @@ public record ConversationDTO(
         String type,
         String participantAType,
         UUID participantAId,
+        String participantAName,
         String participantBType,
         UUID participantBId,
+        String participantBName,
         String subject,
         int unread,
         Instant lastMessageAt

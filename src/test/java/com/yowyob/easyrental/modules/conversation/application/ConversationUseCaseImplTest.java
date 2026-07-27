@@ -43,6 +43,12 @@ class ConversationUseCaseImplTest {
     @Mock
     private NotificationUseCase notificationUseCase;
 
+    @Mock
+    private com.yowyob.easyrental.modules.auth.domain.port.out.AuthUserPort userRepository;
+
+    @Mock
+    private com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort agencyRepository;
+
     @InjectMocks
     private ConversationUseCaseImpl useCase;
 
@@ -221,6 +227,45 @@ class ConversationUseCaseImplTest {
                 .verify();
 
         verify(repo, never()).save(any());
+    }
+
+    @Test
+    void adminListAll_resolvesParticipantNames() {
+        UUID convId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+
+        ConversationEntity conv = ConversationEntity.builder()
+                .id(convId)
+                .type(ConversationType.CLIENT_AGENCY)
+                .participantAType(ParticipantType.CLIENT)
+                .participantAId(clientId)
+                .participantBType(ParticipantType.AGENCY)
+                .participantBId(agencyId)
+                .aUnread(0)
+                .bUnread(0)
+                .build();
+
+        when(repo.findAll(0, 50)).thenReturn(reactor.core.publisher.Flux.just(conv));
+        when(userRepository.findById(clientId)).thenReturn(Mono.just(
+                com.yowyob.easyrental.modules.auth.domain.UserEntity.builder()
+                        .id(clientId).fullname("Francis Client").email("f@x.com").build()));
+        when(agencyRepository.findById(agencyId)).thenReturn(Mono.just(
+                com.yowyob.easyrental.modules.agency.domain.AgencyEntity.builder()
+                        .id(agencyId).name("Global test 23-07").build()));
+        // Le mapper (mocké) fait transiter les noms résolus (args 4 et 5) dans le DTO.
+        when(mapper.toDto(any(), any(), any(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> new com.yowyob.easyrental.modules.conversation.dto.ConversationDTO(
+                        convId, "CLIENT_AGENCY", "CLIENT", clientId, inv.getArgument(3),
+                        "AGENCY", agencyId, inv.getArgument(4), null, 0, null));
+
+        StepVerifier.create(useCase.adminListAll(0, 50))
+                .assertNext(dto -> {
+                    assertThat(dto.participantAName()).isEqualTo("Francis Client");
+                    assertThat(dto.participantBName()).isEqualTo("Global test 23-07");
+                })
+                .verifyComplete();
     }
 
     @Test

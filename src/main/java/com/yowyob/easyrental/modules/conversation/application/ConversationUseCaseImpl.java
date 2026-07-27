@@ -39,6 +39,8 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
     private final ConversationRepositoryPort conversationRepository;
     private final ConversationMapper mapper;
     private final NotificationUseCase notificationUseCase;
+    private final com.yowyob.easyrental.modules.auth.domain.port.out.AuthUserPort userRepository;
+    private final com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort agencyRepository;
 
     @Override
     public Mono<ConversationEntity> openOrGet(ParticipantType aType, UUID aId, ParticipantType bType, UUID bId) {
@@ -131,7 +133,34 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
     @Override
     public Flux<ConversationDTO> listForParticipant(ParticipantType type, UUID id) {
         return conversationRepository.findForParticipant(type.name(), id)
-                .map(c -> mapper.toDto(c, type, id));
+                .flatMapSequential(c -> toDtoWithNames(c, type, id));
+    }
+
+    /** Résout les noms lisibles des 2 participants puis construit le DTO (ordre préservé). */
+    private Mono<ConversationDTO> toDtoWithNames(ConversationEntity c, ParticipantType viewerType, UUID viewerId) {
+        return Mono.zip(
+                        resolveName(c.getParticipantAType(), c.getParticipantAId()),
+                        resolveName(c.getParticipantBType(), c.getParticipantBId()))
+                .map(names -> mapper.toDto(c, viewerType, viewerId, names.getT1(), names.getT2()));
+    }
+
+    /** Nom affichable d'un participant : nom du client, nom de l'agence, ou "Support" pour l'admin. */
+    private Mono<String> resolveName(ParticipantType type, UUID id) {
+        if (type == ParticipantType.ADMIN) {
+            return Mono.just("Support");
+        }
+        if (id == null) {
+            return Mono.just("Inconnu");
+        }
+        if (type == ParticipantType.CLIENT) {
+            return userRepository.findById(id)
+                    .map(u -> u.getFullname() != null && !u.getFullname().isBlank()
+                            ? u.getFullname() : u.getEmail())
+                    .defaultIfEmpty("Client");
+        }
+        return agencyRepository.findById(id)
+                .map(a -> a.getName() != null && !a.getName().isBlank() ? a.getName() : "Agence")
+                .defaultIfEmpty("Agence");
     }
 
     @Override
@@ -169,7 +198,7 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
     @Override
     public Flux<ConversationDTO> adminListAll(int page, int size) {
         return conversationRepository.findAll(page, size)
-                .map(c -> mapper.toDto(c, ParticipantType.ADMIN, null));
+                .flatMapSequential(c -> toDtoWithNames(c, ParticipantType.ADMIN, null));
     }
 
     private boolean isParticipantA(ConversationEntity conversation, ParticipantType type, UUID id) {

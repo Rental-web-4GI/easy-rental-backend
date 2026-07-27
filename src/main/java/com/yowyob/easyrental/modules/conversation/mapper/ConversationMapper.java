@@ -18,7 +18,8 @@ import java.util.Objects;
 @Component
 public class ConversationMapper {
 
-    public ConversationDTO toDto(ConversationEntity entity, ParticipantType viewerType, java.util.UUID viewerId) {
+    public ConversationDTO toDto(ConversationEntity entity, ParticipantType viewerType, java.util.UUID viewerId,
+                                 String participantAName, String participantBName) {
         boolean isA = entity.getParticipantAType() == viewerType
                 && Objects.equals(entity.getParticipantAId(), viewerId);
         int unread = isA ? nz(entity.getAUnread()) : nz(entity.getBUnread());
@@ -28,8 +29,10 @@ public class ConversationMapper {
                 entity.getType() != null ? entity.getType().name() : null,
                 entity.getParticipantAType() != null ? entity.getParticipantAType().name() : null,
                 entity.getParticipantAId(),
+                participantAName,
                 entity.getParticipantBType() != null ? entity.getParticipantBType().name() : null,
                 entity.getParticipantBId(),
+                participantBName,
                 entity.getSubject(),
                 unread,
                 entity.getLastMessageAt()
