@@ -674,6 +674,16 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                 user.setAccountType("FREELANCE");
                                 return userRepository.save(user);
                             })
+                            // Garantir une org locale FREELANCE + agence dès le signup, même quand
+                            // Kernel diffère la création (EMAIL_NOT_VERIFIED). Idempotent via
+                            // findByOwnerId : l'org sera réutilisée à l'onboarding, pas dupliquée.
+                            .flatMap(user -> orgRepository.findByOwnerId(user.getId())
+                                    .switchIfEmpty(Mono.defer(() -> createLocalFreelanceOrg(user, request)))
+                                    .onErrorResume(e -> {
+                                        log.warn("[freelance] création org locale différée échouée: {}",
+                                                e.getMessage());
+                                        return Mono.empty();
+                                    }))
                             .then(Mono.error(ex));
                 })
                 .doOnSuccess(o -> {
@@ -695,6 +705,40 @@ public class AuthUseCaseImpl implements AuthUseCase {
             org.setSubscriptionPlanId(request.planId());
         }
         return orgRepository.save(org);
+    }
+
+    /**
+     * Crée une organisation locale FREELANCE + agence par défaut sans dépendre de Kernel
+     * (kernelOrganizationId reste null, à lier plus tard). Utilisé quand Kernel diffère la
+     * création d'org (EMAIL_NOT_VERIFIED) pour ne jamais laisser un freelance sans org.
+     */
+    private Mono<OrganizationEntity> createLocalFreelanceOrg(UserEntity user, RegisterFreelanceRequest request) {
+        String orgName = (request.firstname() + " " + request.lastname()).trim();
+        return planRepository.findByName("FREE")
+                .switchIfEmpty(Mono.error(new RuntimeException("Plan FREE non configuré en base")))
+                .flatMap(freePlan -> {
+                    OrganizationEntity org = OrganizationEntity.builder()
+                            .id(UUID.randomUUID())
+                            .name(orgName.isBlank() ? user.getEmail() : orgName)
+                            .ownerId(user.getId())
+                            .email(user.getEmail())
+                            .country("CM")
+                            .timezone("Africa/Douala")
+                            .accountType("FREELANCE")
+                            .city(request.city())
+                            .phone(request.phone())
+                            .subscriptionPlanId(request.planId() != null ? request.planId() : freePlan.getId())
+                            .subscriptionAutoRenew(true)
+                            .isVerified(false)
+                            .isDriverBookingRequired(false)
+                            .isNewRecord(true)
+                            .build();
+                    return orgRepository.save(Objects.requireNonNull(org))
+                            .flatMap(savedOrg -> subscriptionService
+                                    .createHistoryRecord(savedOrg.getId(), freePlan.getName(), null)
+                                    .then(createDefaultFreelanceAgency(savedOrg, request))
+                                    .thenReturn(savedOrg));
+                });
     }
 
     private Mono<AgencyEntity> createDefaultFreelanceAgency(OrganizationEntity org, RegisterFreelanceRequest request) {
