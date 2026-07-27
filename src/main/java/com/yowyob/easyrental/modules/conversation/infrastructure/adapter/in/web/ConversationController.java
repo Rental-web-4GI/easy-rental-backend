@@ -81,7 +81,8 @@ public class ConversationController {
             @PathVariable UUID id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
-        return useCase.getMessages(id, page, size);
+        return currentParticipant()
+                .flatMapMany(caller -> useCase.getMessages(id, caller.type(), caller.id(), page, size));
     }
 
     @Operation(summary = "List conversations for the current caller")

@@ -69,6 +69,9 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
         return conversationRepository.findById(conversationId)
                 .switchIfEmpty(Mono.error(new ValidationException("CONVERSATION_NOT_FOUND")))
                 .flatMap(conversation -> {
+                    if (!isParticipant(conversation, senderType, senderId)) {
+                        return Mono.<ConversationMessageEntity>error(new ValidationException("NOT_A_PARTICIPANT"));
+                    }
                     boolean senderIsA = isParticipantA(conversation, senderType, senderId);
                     Instant now = Instant.now();
                     if (senderIsA) {
@@ -132,8 +135,16 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
     }
 
     @Override
-    public Flux<MessageDTO> getMessages(UUID conversationId, int page, int size) {
-        return conversationRepository.findMessages(conversationId, page, size)
+    public Flux<MessageDTO> getMessages(UUID conversationId, ParticipantType callerType, UUID callerId,
+                                        int page, int size) {
+        // ADMIN a un droit de supervision (lecture seule) sur toute conversation ;
+        // les autres appelants ne lisent que les conversations dont ils sont membres.
+        return conversationRepository.findById(conversationId)
+                .switchIfEmpty(Mono.error(new ValidationException("CONVERSATION_NOT_FOUND")))
+                .filter(conversation -> callerType == ParticipantType.ADMIN
+                        || isParticipant(conversation, callerType, callerId))
+                .switchIfEmpty(Mono.error(new ValidationException("NOT_A_PARTICIPANT")))
+                .flatMapMany(conversation -> conversationRepository.findMessages(conversationId, page, size))
                 .map(mapper::toMessageDto);
     }
 
@@ -142,6 +153,9 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
         return conversationRepository.findById(conversationId)
                 .switchIfEmpty(Mono.error(new ValidationException("CONVERSATION_NOT_FOUND")))
                 .flatMap(conversation -> {
+                    if (!isParticipant(conversation, readerType, readerId)) {
+                        return Mono.<ConversationEntity>error(new ValidationException("NOT_A_PARTICIPANT"));
+                    }
                     if (isParticipantA(conversation, readerType, readerId)) {
                         conversation.setAUnread(0);
                     } else {
@@ -160,6 +174,15 @@ public class ConversationUseCaseImpl implements ConversationUseCase {
 
     private boolean isParticipantA(ConversationEntity conversation, ParticipantType type, UUID id) {
         return conversation.getParticipantAType() == type && Objects.equals(conversation.getParticipantAId(), id);
+    }
+
+    private boolean isParticipantB(ConversationEntity conversation, ParticipantType type, UUID id) {
+        return conversation.getParticipantBType() == type && Objects.equals(conversation.getParticipantBId(), id);
+    }
+
+    /** True when (type,id) is one of the two participants of the conversation. */
+    private boolean isParticipant(ConversationEntity conversation, ParticipantType type, UUID id) {
+        return isParticipantA(conversation, type, id) || isParticipantB(conversation, type, id);
     }
 
     private int nz(Integer value) {

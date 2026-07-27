@@ -137,6 +137,93 @@ class ConversationUseCaseImplTest {
     }
 
     @Test
+    void sendMessage_rejectsNonParticipant() {
+        UUID convId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        UUID intruderId = UUID.randomUUID();
+
+        ConversationEntity conv = ConversationEntity.builder()
+                .id(convId)
+                .type(ConversationType.CLIENT_AGENCY)
+                .participantAType(ParticipantType.CLIENT)
+                .participantAId(clientId)
+                .participantBType(ParticipantType.AGENCY)
+                .participantBId(agencyId)
+                .aUnread(0)
+                .bUnread(0)
+                .build();
+
+        when(repo.findById(convId)).thenReturn(Mono.just(conv));
+
+        StepVerifier.create(useCase.sendMessage(convId, ParticipantType.CLIENT, intruderId, "intrusion"))
+                .expectErrorMatches(e -> e.getMessage().contains("NOT_A_PARTICIPANT"))
+                .verify();
+
+        verify(repo, never()).save(any());
+        verify(repo, never()).saveMessage(any());
+    }
+
+    @Test
+    void getMessages_rejectsNonParticipantButAllowsAdmin() {
+        UUID convId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+        UUID intruderId = UUID.randomUUID();
+
+        ConversationEntity conv = ConversationEntity.builder()
+                .id(convId)
+                .type(ConversationType.CLIENT_AGENCY)
+                .participantAType(ParticipantType.CLIENT)
+                .participantAId(clientId)
+                .participantBType(ParticipantType.AGENCY)
+                .participantBId(agencyId)
+                .build();
+
+        when(repo.findById(convId)).thenReturn(Mono.just(conv));
+        when(mapper.toMessageDto(any())).thenReturn(
+                new MessageDTO(UUID.randomUUID(), convId, "CLIENT", clientId, "hi", Instant.now()));
+        when(repo.findMessages(convId, 0, 50)).thenReturn(reactor.core.publisher.Flux.just(
+                mock(ConversationMessageEntity.class)));
+
+        // Un client tiers ne peut pas lire la conversation.
+        StepVerifier.create(useCase.getMessages(convId, ParticipantType.CLIENT, intruderId, 0, 50))
+                .expectErrorMatches(e -> e.getMessage().contains("NOT_A_PARTICIPANT"))
+                .verify();
+
+        // Un ADMIN (supervision) peut lire n'importe quelle conversation.
+        StepVerifier.create(useCase.getMessages(convId, ParticipantType.ADMIN, null, 0, 50))
+                .expectNextCount(1)
+                .verifyComplete();
+    }
+
+    @Test
+    void markRead_rejectsNonParticipant() {
+        UUID convId = UUID.randomUUID();
+        UUID clientId = UUID.randomUUID();
+        UUID agencyId = UUID.randomUUID();
+
+        ConversationEntity conv = ConversationEntity.builder()
+                .id(convId)
+                .type(ConversationType.CLIENT_AGENCY)
+                .participantAType(ParticipantType.CLIENT)
+                .participantAId(clientId)
+                .participantBType(ParticipantType.AGENCY)
+                .participantBId(agencyId)
+                .aUnread(3)
+                .bUnread(2)
+                .build();
+
+        when(repo.findById(convId)).thenReturn(Mono.just(conv));
+
+        StepVerifier.create(useCase.markRead(convId, ParticipantType.CLIENT, UUID.randomUUID()))
+                .expectErrorMatches(e -> e.getMessage().contains("NOT_A_PARTICIPANT"))
+                .verify();
+
+        verify(repo, never()).save(any());
+    }
+
+    @Test
     void markRead_resetsReaderUnread() {
         UUID convId = UUID.randomUUID();
         UUID clientId = UUID.randomUUID();

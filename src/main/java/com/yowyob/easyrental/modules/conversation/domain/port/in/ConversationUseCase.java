@@ -24,7 +24,7 @@ public interface ConversationUseCase {
 
     Flux<ConversationDTO> listForParticipant(ParticipantType type, UUID id);
 
-    Flux<MessageDTO> getMessages(UUID conversationId, int page, int size);
+    Flux<MessageDTO> getMessages(UUID conversationId, ParticipantType callerType, UUID callerId, int page, int size);
 
     Mono<Void> markRead(UUID conversationId, ParticipantType readerType, UUID readerId);
 

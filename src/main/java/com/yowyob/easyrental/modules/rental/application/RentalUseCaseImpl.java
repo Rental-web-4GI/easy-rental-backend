@@ -144,13 +144,17 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         BigDecimal rawBase = RentalDurationCalculator.computeBaseAmount(
                             request.startDate(), request.endDate(), request.rentalType(),
                             vehiclePrice, hasDriverSelected ? driverPrice : null);
-                        // R3 : remise fidélité = min(points × 10, 50% de la base location).
-                        int redeemPts = request.redeemPoints() == null ? 0 : Math.max(0, request.redeemPoints());
-                        BigDecimal loyaltyDiscount = redeemPts > 0
-                            ? BigDecimal.valueOf((long) redeemPts * 10)
-                                .min(rawBase.multiply(new BigDecimal("0.5")))
-                                .setScale(2, java.math.RoundingMode.HALF_UP)
-                            : BigDecimal.ZERO;
+                        // R3 : remise fidélité = points × 10, plafonnée à 50% de la base location.
+                        // On écrête les points demandés au plafond AVANT de débiter, sinon on
+                        // débiterait plus de points que la remise réellement accordée.
+                        int requestedPts = request.redeemPoints() == null ? 0 : Math.max(0, request.redeemPoints());
+                        int maxRedeemablePts = rawBase.multiply(new BigDecimal("0.5"))
+                            .divide(BigDecimal.TEN, 0, java.math.RoundingMode.FLOOR)
+                            .intValue();
+                        int redeemPts = Math.min(requestedPts, maxRedeemablePts);
+                        // La remise correspond exactement aux points réellement consommés (aucune perte).
+                        BigDecimal loyaltyDiscount = BigDecimal.valueOf((long) redeemPts * 10)
+                            .setScale(2, java.math.RoundingMode.HALF_UP);
                         BigDecimal baseAmount = rawBase.subtract(loyaltyDiscount).max(BigDecimal.ZERO);
                         RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
                             baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
