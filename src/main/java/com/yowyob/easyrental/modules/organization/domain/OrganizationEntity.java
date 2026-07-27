@@ -96,4 +96,10 @@ public class OrganizationEntity implements Persistable<UUID> {
     // Freelance (individual) vs Company account
     @Builder.Default
     private String accountType = "COMPANY";
+
+    // R3 : suspension d'organisation
+    @Builder.Default
+    private String status = "ACTIVE";
+    private java.time.LocalDateTime suspendedAt;
+    private String suspensionReason;
 }

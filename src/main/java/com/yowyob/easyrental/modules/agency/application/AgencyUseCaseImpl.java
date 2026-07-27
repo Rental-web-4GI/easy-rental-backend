@@ -290,7 +290,21 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     }
 
     public Flux<AgencyResponseDTO> getAllAgencies() {
-        return agencyRepository.findCatalogAgencies().flatMap(this::toDtoWithAccountType, 16);
+        return agencyRepository.findCatalogAgencies().flatMap(this::toCatalogDto, 16);
+    }
+
+    /**
+     * Comme {@link #toDtoWithAccountType} mais EXCLUT du catalogue les agences dont
+     * l'organisation est suspendue (cascade R3) — elles disparaissent de la marketplace.
+     */
+    private Mono<AgencyResponseDTO> toCatalogDto(AgencyEntity agency) {
+        if (agency.getOrganizationId() == null) {
+            return toDtoWithAccountType(agency);
+        }
+        return organizationRepository.findById(agency.getOrganizationId())
+                .map(org -> "SUSPENDED".equalsIgnoreCase(org.getStatus()))
+                .defaultIfEmpty(false)
+                .flatMap(suspended -> suspended ? Mono.empty() : toDtoWithAccountType(agency));
     }
 
     public Mono<AgencyResponseDTO> getAgency(UUID id) {
@@ -304,7 +318,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
         return agencyRepository.searchAgencies(
                 keyword != null && !keyword.isBlank() ? keyword : null,
                 city != null && !city.isBlank() ? city : null
-        ).flatMap(this::toDtoWithAccountType, 16);
+        ).flatMap(this::toCatalogDto, 16);
     }
 
     private Mono<AgencyResponseDTO> toDtoWithAccountType(AgencyEntity agency) {

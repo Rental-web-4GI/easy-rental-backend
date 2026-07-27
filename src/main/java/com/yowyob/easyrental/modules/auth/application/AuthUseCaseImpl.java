@@ -96,6 +96,24 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 buildLoginMetadata(request, null));
     }
 
+    /**
+     * R3 : refuse la connexion des membres (owner/staff) d'une organisation suspendue.
+     * Passe silencieusement pour les autres rôles ou si l'organisation est active/introuvable.
+     */
+    private Mono<Void> ensureOrgActive(UserEntity user) {
+        String role = user.getRole();
+        if (!"ORGANIZATION".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+            return Mono.empty();
+        }
+        Mono<OrganizationEntity> orgMono = user.getOrganizationId() != null
+                ? orgRepository.findById(user.getOrganizationId())
+                : orgRepository.findByOwnerId(user.getId());
+        return orgMono
+                .filter(org -> "SUSPENDED".equalsIgnoreCase(org.getStatus()))
+                .flatMap(org -> Mono.<Void>error(new ValidationException("ORG_SUSPENDED")))
+                .then();
+    }
+
     private String buildLoginMetadata(LoginRequest request, String role) {
         String email = (request == null || request.email() == null) ? "" : request.email().trim();
         String source = (request == null || request.source() == null) ? "" : request.source().trim().toUpperCase();
@@ -132,12 +150,12 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .filter(user -> role.equalsIgnoreCase(user.getRole()))
                 .filter(user -> user.getPassword() != null)
                 .filter(user -> passwordEncoder.matches(request.password(), user.getPassword()))
-                .flatMap(user -> {
+                .flatMap(user -> ensureOrgActive(user).then(Mono.defer(() -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", auditPrefix + user.getEmail()));
                     return auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
                             buildLoginMetadata(request, role))
                         .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole())));
-                });
+                })));
     }
 
     private boolean useKernelClientAuth() {
@@ -183,20 +201,21 @@ public class AuthUseCaseImpl implements AuthUseCase {
         } else {
             response = AuthResponse.withToken(kernelAccessToken);
         }
-        return auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
-                buildLoginMetadata(request, user.getRole())).thenReturn(response);
+        return ensureOrgActive(user).then(
+                auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                        buildLoginMetadata(request, user.getRole())).thenReturn(response));
     }
 
     private Mono<AuthResponse> localLogin(LoginRequest request) {
         String email = request.email() == null ? "" : request.email().trim().toLowerCase();
         return userRepository.findByEmail(email)
                 .filter(u -> u.getPassword() != null && passwordEncoder.matches(request.password(), u.getPassword()))
-                .flatMap(u -> {
+                .flatMap(u -> ensureOrgActive(u).then(Mono.defer(() -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", "User logged in: " + u.getEmail()));
                     return auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null,
                             buildLoginMetadata(request, u.getRole()))
                         .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole())));
-                })
+                })))
                 .switchIfEmpty(Mono.error(new RuntimeException("Bad credentials")));
     }
 
