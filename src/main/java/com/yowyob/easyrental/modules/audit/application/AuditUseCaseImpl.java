@@ -30,25 +30,28 @@ public class AuditUseCaseImpl implements AuditUseCase {
     @Override
     public Mono<Void> record(UUID userId, String action, String resourceType, UUID resourceId, String ip,
             String userAgent, String metadata) {
-        AuditEventEntity entity = AuditEventEntity.builder()
-                .id(UUID.randomUUID())
-                .userId(userId)
-                .action(action)
-                .resourceType(resourceType)
-                .resourceId(resourceId)
-                .ip(ip)
-                .userAgent(userAgent)
-                .metadata(metadata)
-                .createdAt(Instant.now())
-                .isNewRecord(true)
-                .build();
-
-        return auditRepository.save(entity)
-                .then()
-                .onErrorResume(e -> {
-                    log.warn("audit failed", e);
-                    return Mono.empty();
-                });
+        // IP / user-agent résolus depuis le contexte Reactor (AuditContextFilter)
+        // quand l'appelant ne les fournit pas (ex. LOGIN_*).
+        return Mono.deferContextual(ctx -> {
+            String effectiveIp = ip != null ? ip : ctx.getOrDefault("AUDIT_IP", null);
+            String effectiveUa = userAgent != null ? userAgent : ctx.getOrDefault("AUDIT_UA", null);
+            AuditEventEntity entity = AuditEventEntity.builder()
+                    .id(UUID.randomUUID())
+                    .userId(userId)
+                    .action(action)
+                    .resourceType(resourceType)
+                    .resourceId(resourceId)
+                    .ip(effectiveIp)
+                    .userAgent(effectiveUa)
+                    .metadata(metadata)
+                    .createdAt(Instant.now())
+                    .isNewRecord(true)
+                    .build();
+            return auditRepository.save(entity).then();
+        }).onErrorResume(e -> {
+            log.warn("audit failed", e);
+            return Mono.empty();
+        });
     }
 
     @Override

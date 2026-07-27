@@ -85,12 +85,15 @@ public class AuthUseCaseImpl implements AuthUseCase {
         } else {
             flow = localLogin(request);
         }
-        return flow.doOnError(error -> auditLoginFailed(request));
+        // onErrorResume (au lieu de doOnError) pour que l'audit s'exécute DANS la
+        // chaîne réactive — il capte ainsi l'IP/user-agent du contexte (AuditContextFilter).
+        return flow.onErrorResume(error ->
+                auditLoginFailed(request).then(Mono.error(error)));
     }
 
-    private void auditLoginFailed(LoginRequest request) {
-        auditUseCase.record(null, "LOGIN_FAILED", null, null, null, null, buildLoginMetadata(request, null))
-                .subscribe();
+    private Mono<Void> auditLoginFailed(LoginRequest request) {
+        return auditUseCase.record(null, "LOGIN_FAILED", null, null, null, null,
+                buildLoginMetadata(request, null));
     }
 
     private String buildLoginMetadata(LoginRequest request, String role) {
@@ -129,11 +132,11 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .filter(user -> role.equalsIgnoreCase(user.getRole()))
                 .filter(user -> user.getPassword() != null)
                 .filter(user -> passwordEncoder.matches(request.password(), user.getPassword()))
-                .map(user -> {
+                .flatMap(user -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", auditPrefix + user.getEmail()));
-                    auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
-                            buildLoginMetadata(request, role)).subscribe();
-                    return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
+                    return auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                            buildLoginMetadata(request, role))
+                        .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole())));
                 });
     }
 
@@ -146,7 +149,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
     public Mono<AuthResponse> confirmMfa(String mfaToken, String code) {
         return kernelAuthAdapter.confirmMfa(mfaToken, code)
                 .flatMap(result -> kernelUserMappingService.syncFromAccessToken(result.accessToken())
-                        .map(user -> issueAuthResponse(user, result.accessToken(), null)));
+                        .flatMap(user -> issueAuthResponse(user, result.accessToken(), null)));
     }
 
     private Mono<AuthResponse> kernelLogin(LoginRequest request) {
@@ -168,29 +171,31 @@ public class AuthUseCaseImpl implements AuthUseCase {
                             }
                             String token = result.accessToken();
                             return kernelUserMappingService.syncFromKernelLogin(principal, token)
-                                    .map(user -> issueAuthResponse(user, token, request));
+                                    .flatMap(user -> issueAuthResponse(user, token, request));
                         }));
     }
 
-    private AuthResponse issueAuthResponse(UserEntity user, String kernelAccessToken, LoginRequest request) {
-        auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
-                buildLoginMetadata(request, user.getRole())).subscribe();
+    private Mono<AuthResponse> issueAuthResponse(UserEntity user, String kernelAccessToken, LoginRequest request) {
+        AuthResponse response;
         if ("ORGANIZATION".equalsIgnoreCase(user.getRole())) {
             kernelSessionStore.store(user.getEmail(), kernelAccessToken);
-            return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
+            response = AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
+        } else {
+            response = AuthResponse.withToken(kernelAccessToken);
         }
-        return AuthResponse.withToken(kernelAccessToken);
+        return auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                buildLoginMetadata(request, user.getRole())).thenReturn(response);
     }
 
     private Mono<AuthResponse> localLogin(LoginRequest request) {
         String email = request.email() == null ? "" : request.email().trim().toLowerCase();
         return userRepository.findByEmail(email)
                 .filter(u -> u.getPassword() != null && passwordEncoder.matches(request.password(), u.getPassword()))
-                .map(u -> {
+                .flatMap(u -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", "User logged in: " + u.getEmail()));
-                    auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null,
-                            buildLoginMetadata(request, u.getRole())).subscribe();
-                    return AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole()));
+                    return auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null,
+                            buildLoginMetadata(request, u.getRole()))
+                        .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole())));
                 })
                 .switchIfEmpty(Mono.error(new RuntimeException("Bad credentials")));
     }
