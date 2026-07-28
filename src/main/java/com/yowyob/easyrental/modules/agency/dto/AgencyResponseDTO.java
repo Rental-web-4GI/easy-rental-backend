@@ -29,5 +29,8 @@ public record AgencyResponseDTO(
     String secondaryColor,
     Integer totalVehicles,
     Integer totalRentals,
-    Double monthlyRevenue
+    Double monthlyRevenue,
+    String organizationAccountType,
+    Double averageRating,
+    Long ratingsCount
 ) {}

@@ -45,6 +45,31 @@ public class RentalEntity implements Persistable<UUID> {
     private BigDecimal commissionAmount;
     private BigDecimal depositAmount;
 
+    // R2 pricing/tracking fields
+    private BigDecimal rentalAmount;
+    private BigDecimal cautionAmount;
+
+    @Builder.Default
+    private BigDecimal rentalAmountPaid = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal cautionAmountPaid = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal cautionHeld = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal cautionDeducted = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal cautionRefunded = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal supplementDue = BigDecimal.ZERO;
+
+    private BigDecimal requestedUpfront;
+
+    private Integer startOdometer;
+    private Integer endOdometer;
+
+    @Builder.Default
+    private BigDecimal trackedKm = BigDecimal.ZERO;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

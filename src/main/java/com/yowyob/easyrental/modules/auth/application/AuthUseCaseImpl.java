@@ -12,6 +12,7 @@ import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelAuthAdapter;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelTpAdapter;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.in.AuthUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -71,16 +72,61 @@ public class AuthUseCaseImpl implements AuthUseCase {
     private final KernelTpAdapter kernelTpAdapter;
     private final AgencyRepositoryPort agencyRepository;
     private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
+    private final AuditUseCase auditUseCase;
 
     @Override
     public Mono<AuthResponse> login(LoginRequest request) {
+        Mono<AuthResponse> flow;
         if (kernelProperties.isIntegrationEnabled()) {
-            return tryLocalAdminLogin(request)
+            flow = tryLocalAdminLogin(request)
                     .switchIfEmpty(tryLocalStaffLogin(request))
                     .switchIfEmpty(tryLocalClientLogin(request))
                     .switchIfEmpty(kernelLogin(request));
+        } else {
+            flow = localLogin(request);
         }
-        return localLogin(request);
+        // onErrorResume (au lieu de doOnError) pour que l'audit s'exécute DANS la
+        // chaîne réactive — il capte ainsi l'IP/user-agent du contexte (AuditContextFilter).
+        return flow.onErrorResume(error ->
+                auditLoginFailed(request).then(Mono.error(error)));
+    }
+
+    private Mono<Void> auditLoginFailed(LoginRequest request) {
+        return auditUseCase.record(null, "LOGIN_FAILED", null, null, null, null,
+                buildLoginMetadata(request, null));
+    }
+
+    /**
+     * R3 : refuse la connexion des membres (owner/staff) d'une organisation suspendue.
+     * Passe silencieusement pour les autres rôles ou si l'organisation est active/introuvable.
+     */
+    private Mono<Void> ensureOrgActive(UserEntity user) {
+        String role = user.getRole();
+        if (!"ORGANIZATION".equalsIgnoreCase(role) && !"STAFF".equalsIgnoreCase(role)) {
+            return Mono.empty();
+        }
+        Mono<OrganizationEntity> orgMono = user.getOrganizationId() != null
+                ? orgRepository.findById(user.getOrganizationId())
+                : orgRepository.findByOwnerId(user.getId());
+        return orgMono
+                .filter(org -> "SUSPENDED".equalsIgnoreCase(org.getStatus()))
+                .flatMap(org -> Mono.<Void>error(new ValidationException("ORG_SUSPENDED")))
+                .then();
+    }
+
+    private String buildLoginMetadata(LoginRequest request, String role) {
+        String email = (request == null || request.email() == null) ? "" : request.email().trim();
+        String source = (request == null || request.source() == null) ? "" : request.source().trim().toUpperCase();
+        StringBuilder sb = new StringBuilder("{\"email\":\"")
+                .append(email.replace("\"", "\\\""))
+                .append("\"");
+        if (!source.isBlank()) {
+            sb.append(",\"source\":\"").append(source.replace("\"", "\\\"")).append("\"");
+        }
+        if (role != null && !role.isBlank()) {
+            sb.append(",\"role\":\"").append(role).append("\"");
+        }
+        return sb.append("}").toString();
     }
 
     private Mono<AuthResponse> tryLocalAdminLogin(LoginRequest request) {
@@ -104,10 +150,12 @@ public class AuthUseCaseImpl implements AuthUseCase {
                 .filter(user -> role.equalsIgnoreCase(user.getRole()))
                 .filter(user -> user.getPassword() != null)
                 .filter(user -> passwordEncoder.matches(request.password(), user.getPassword()))
-                .map(user -> {
+                .flatMap(user -> ensureOrgActive(user).then(Mono.defer(() -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", auditPrefix + user.getEmail()));
-                    return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
-                });
+                    return auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                            buildLoginMetadata(request, role))
+                        .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole())));
+                })));
     }
 
     private boolean useKernelClientAuth() {
@@ -119,7 +167,7 @@ public class AuthUseCaseImpl implements AuthUseCase {
     public Mono<AuthResponse> confirmMfa(String mfaToken, String code) {
         return kernelAuthAdapter.confirmMfa(mfaToken, code)
                 .flatMap(result -> kernelUserMappingService.syncFromAccessToken(result.accessToken())
-                        .map(user -> issueAuthResponse(user, result.accessToken())));
+                        .flatMap(user -> issueAuthResponse(user, result.accessToken(), null)));
     }
 
     private Mono<AuthResponse> kernelLogin(LoginRequest request) {
@@ -141,26 +189,33 @@ public class AuthUseCaseImpl implements AuthUseCase {
                             }
                             String token = result.accessToken();
                             return kernelUserMappingService.syncFromKernelLogin(principal, token)
-                                    .map(user -> issueAuthResponse(user, token));
+                                    .flatMap(user -> issueAuthResponse(user, token, request));
                         }));
     }
 
-    private AuthResponse issueAuthResponse(UserEntity user, String kernelAccessToken) {
+    private Mono<AuthResponse> issueAuthResponse(UserEntity user, String kernelAccessToken, LoginRequest request) {
+        AuthResponse response;
         if ("ORGANIZATION".equalsIgnoreCase(user.getRole())) {
             kernelSessionStore.store(user.getEmail(), kernelAccessToken);
-            return AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
+            response = AuthResponse.withToken(jwtUtil.generateToken(user.getEmail(), user.getRole()));
+        } else {
+            response = AuthResponse.withToken(kernelAccessToken);
         }
-        return AuthResponse.withToken(kernelAccessToken);
+        return ensureOrgActive(user).then(
+                auditUseCase.record(user.getId(), "LOGIN_SUCCESS", "USER", user.getId(), null, null,
+                        buildLoginMetadata(request, user.getRole())).thenReturn(response));
     }
 
     private Mono<AuthResponse> localLogin(LoginRequest request) {
         String email = request.email() == null ? "" : request.email().trim().toLowerCase();
         return userRepository.findByEmail(email)
                 .filter(u -> u.getPassword() != null && passwordEncoder.matches(request.password(), u.getPassword()))
-                .map(u -> {
+                .flatMap(u -> ensureOrgActive(u).then(Mono.defer(() -> {
                     eventPublisher.publishEvent(new AuditEvent("LOGIN", "AUTH", "User logged in: " + u.getEmail()));
-                    return AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole()));
-                })
+                    return auditUseCase.record(u.getId(), "LOGIN_SUCCESS", "USER", u.getId(), null, null,
+                            buildLoginMetadata(request, u.getRole()))
+                        .thenReturn(AuthResponse.withToken(jwtUtil.generateToken(u.getEmail(), u.getRole())));
+                })))
                 .switchIfEmpty(Mono.error(new RuntimeException("Bad credentials")));
     }
 
@@ -222,10 +277,26 @@ public class AuthUseCaseImpl implements AuthUseCase {
     @Override
     @Transactional(noRollbackFor = ValidationException.class)
     public Mono<RegisterClientResponse> registerClient(RegisterRequest request) {
-        if (useKernelClientAuth()) {
-            return kernelRegisterClient(request);
-        }
-        return localRegisterClient(request);
+        Mono<RegisterClientResponse> flow = useKernelClientAuth()
+                ? kernelRegisterClient(request)
+                : localRegisterClient(request);
+        return flow
+                .doOnSuccess(resp -> {
+                    if (resp != null && resp.user() != null) {
+                        auditUseCase.record(resp.user().getId(), "SIGNUP_CLIENT_SUCCESS", "USER",
+                                resp.user().getId(), null, null, null).subscribe();
+                    }
+                })
+                .doOnError(err -> auditUseCase.record(null, "SIGNUP_CLIENT_FAILED", null, null, null, null,
+                        signupFailureMetadata(request.email(), err)).subscribe());
+    }
+
+    private String signupFailureMetadata(String email, Throwable err) {
+        String safeEmail = email == null ? "" : email.replace("\"", "\\\"");
+        String reason = err != null && err.getMessage() != null
+                ? err.getMessage().replace("\"", "\\\"")
+                : "";
+        return "{\"email\":\"" + safeEmail + "\",\"reason\":\"" + reason + "\"}";
     }
 
     private Mono<RegisterClientResponse> kernelRegisterClient(RegisterRequest request) {
@@ -374,10 +445,18 @@ public class AuthUseCaseImpl implements AuthUseCase {
     // ensuite le fix accountType='FREELANCE' du registerFreelance.
     @Transactional(noRollbackFor = ValidationException.class)
     public Mono<OrganizationEntity> registerOrganization(OrgRegisterRequest request) {
-        if (kernelProperties.isIntegrationEnabled()) {
-            return kernelRegisterOrganization(request);
-        }
-        return localRegisterOrganization(request);
+        Mono<OrganizationEntity> flow = kernelProperties.isIntegrationEnabled()
+                ? kernelRegisterOrganization(request)
+                : localRegisterOrganization(request);
+        return flow
+                .doOnSuccess(org -> {
+                    if (org != null) {
+                        auditUseCase.record(org.getOwnerId(), "SIGNUP_ORG_SUCCESS", "ORGANIZATION",
+                                org.getId(), null, null, null).subscribe();
+                    }
+                })
+                .doOnError(err -> auditUseCase.record(null, "SIGNUP_ORG_FAILED", null, null, null, null,
+                        signupFailureMetadata(request.email(), err)).subscribe());
     }
 
     private Mono<OrganizationEntity> kernelRegisterOrganization(OrgRegisterRequest request) {
@@ -595,11 +674,27 @@ public class AuthUseCaseImpl implements AuthUseCase {
                                 user.setAccountType("FREELANCE");
                                 return userRepository.save(user);
                             })
+                            // Garantir une org locale FREELANCE + agence dès le signup, même quand
+                            // Kernel diffère la création (EMAIL_NOT_VERIFIED). Idempotent via
+                            // findByOwnerId : l'org sera réutilisée à l'onboarding, pas dupliquée.
+                            .flatMap(user -> orgRepository.findByOwnerId(user.getId())
+                                    .switchIfEmpty(Mono.defer(() -> createLocalFreelanceOrg(user, request)))
+                                    .onErrorResume(e -> {
+                                        log.warn("[freelance] création org locale différée échouée: {}",
+                                                e.getMessage());
+                                        return Mono.empty();
+                                    }))
                             .then(Mono.error(ex));
                 })
-                .doOnSuccess(o -> eventPublisher.publishEvent(new AuditEvent(
-                        "REGISTER_FREELANCE", "AUTH",
-                        "Nouveau freelance: " + o.getName() + " (city=" + request.city() + ")")));
+                .doOnSuccess(o -> {
+                    eventPublisher.publishEvent(new AuditEvent(
+                            "REGISTER_FREELANCE", "AUTH",
+                            "Nouveau freelance: " + o.getName() + " (city=" + request.city() + ")"));
+                    auditUseCase.record(o.getOwnerId(), "SIGNUP_FREELANCE_SUCCESS", "ORGANIZATION",
+                            o.getId(), null, null, null).subscribe();
+                })
+                .doOnError(err -> auditUseCase.record(null, "SIGNUP_FREELANCE_FAILED", null, null, null, null,
+                        signupFailureMetadata(request.email(), err)).subscribe());
     }
 
     private Mono<OrganizationEntity> markAsFreelance(OrganizationEntity org, RegisterFreelanceRequest request) {
@@ -610,6 +705,40 @@ public class AuthUseCaseImpl implements AuthUseCase {
             org.setSubscriptionPlanId(request.planId());
         }
         return orgRepository.save(org);
+    }
+
+    /**
+     * Crée une organisation locale FREELANCE + agence par défaut sans dépendre de Kernel
+     * (kernelOrganizationId reste null, à lier plus tard). Utilisé quand Kernel diffère la
+     * création d'org (EMAIL_NOT_VERIFIED) pour ne jamais laisser un freelance sans org.
+     */
+    private Mono<OrganizationEntity> createLocalFreelanceOrg(UserEntity user, RegisterFreelanceRequest request) {
+        String orgName = (request.firstname() + " " + request.lastname()).trim();
+        return planRepository.findByName("FREE")
+                .switchIfEmpty(Mono.error(new RuntimeException("Plan FREE non configuré en base")))
+                .flatMap(freePlan -> {
+                    OrganizationEntity org = OrganizationEntity.builder()
+                            .id(UUID.randomUUID())
+                            .name(orgName.isBlank() ? user.getEmail() : orgName)
+                            .ownerId(user.getId())
+                            .email(user.getEmail())
+                            .country("CM")
+                            .timezone("Africa/Douala")
+                            .accountType("FREELANCE")
+                            .city(request.city())
+                            .phone(request.phone())
+                            .subscriptionPlanId(request.planId() != null ? request.planId() : freePlan.getId())
+                            .subscriptionAutoRenew(true)
+                            .isVerified(false)
+                            .isDriverBookingRequired(false)
+                            .isNewRecord(true)
+                            .build();
+                    return orgRepository.save(Objects.requireNonNull(org))
+                            .flatMap(savedOrg -> subscriptionService
+                                    .createHistoryRecord(savedOrg.getId(), freePlan.getName(), null)
+                                    .then(createDefaultFreelanceAgency(savedOrg, request))
+                                    .thenReturn(savedOrg));
+                });
     }
 
     private Mono<AgencyEntity> createDefaultFreelanceAgency(OrganizationEntity org, RegisterFreelanceRequest request) {

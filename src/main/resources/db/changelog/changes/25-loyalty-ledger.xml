@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <changeSet id="25-loyalty-ledger" author="release1">
+        <sql>
+            CREATE TABLE loyalty_ledger (
+                id UUID PRIMARY KEY,
+                client_id UUID NOT NULL,
+                delta_points INT NOT NULL,
+                source_type VARCHAR(32) NOT NULL,
+                source_id UUID NULL,
+                balance_after INT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX idx_loyalty_ledger_client_created ON loyalty_ledger(client_id, created_at DESC);
+        </sql>
+    </changeSet>
+</databaseChangeLog>

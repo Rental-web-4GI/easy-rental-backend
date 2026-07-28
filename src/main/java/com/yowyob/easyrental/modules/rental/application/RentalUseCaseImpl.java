@@ -11,15 +11,25 @@ import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRe
 import com.yowyob.easyrental.modules.pricing.domain.PricingEntity;
 import com.yowyob.easyrental.modules.pricing.domain.port.in.PricingUseCase;
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
+import com.yowyob.easyrental.modules.rental.domain.PaymentEntity;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckOutRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitResponse;
+import com.yowyob.easyrental.modules.rental.dto.RentalPricingBreakdown;
 import com.yowyob.easyrental.shared.dto.ScheduleRequestDTO;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.PaymentRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalEmailPort;
+import com.yowyob.easyrental.modules.inspection.domain.port.in.InspectionUseCase;
+import com.yowyob.easyrental.modules.inspection.dto.InspectionCreateRequest;
+import com.yowyob.easyrental.modules.tracking.domain.port.in.TrackingUseCase;
 import com.yowyob.easyrental.modules.schedule.domain.port.in.ScheduleUseCase;
 import com.yowyob.easyrental.modules.vehicle.domain.port.in.VehicleUseCase;
 import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
@@ -33,6 +43,7 @@ import com.yowyob.easyrental.shared.enums.PaymentMethod;
 import com.yowyob.easyrental.shared.enums.RentalStatus;
 import com.yowyob.easyrental.shared.enums.ResourceType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -46,6 +57,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class RentalUseCaseImpl implements RentalUseCase {
 
@@ -61,6 +73,11 @@ public class RentalUseCaseImpl implements RentalUseCase {
     private final VehicleUseCase vehicleService;
     private final DriverUseCase driverService;
     private final AuthUserPort authUserPort;
+    private final PaymentRepositoryPort paymentRepository;
+    private final InspectionUseCase inspectionUseCase;
+    private final TrackingUseCase trackingUseCase;
+    private final RentalEmailPort rentalEmailPort;
+    private final com.yowyob.easyrental.modules.loyalty.domain.port.in.LoyaltyUseCase loyaltyUseCase;
 
     // CORRECTION : PENDING est remis ici pour que le client puisse voir son "panier" et le payer
     private static final List<RentalStatus> RESERVATION_ACTIVE_STATUSES = Arrays.asList(
@@ -124,30 +141,46 @@ public class RentalUseCaseImpl implements RentalUseCase {
                         var driverPrice = tuple.getT2();
                         var agency = tuple.getT3();
 
-                        long duration = RentalDurationCalculator.billableUnits(
-                            request.startDate(), request.endDate(), request.rentalType());
+                        BigDecimal rawBase = RentalDurationCalculator.computeBaseAmount(
+                            request.startDate(), request.endDate(), request.rentalType(),
+                            vehiclePrice, hasDriverSelected ? driverPrice : null);
+                        // R3 : remise fidélité = points × 10, plafonnée à 50% de la base location.
+                        // On écrête les points demandés au plafond AVANT de débiter, sinon on
+                        // débiterait plus de points que la remise réellement accordée.
+                        int requestedPts = request.redeemPoints() == null ? 0 : Math.max(0, request.redeemPoints());
+                        int maxRedeemablePts = rawBase.multiply(new BigDecimal("0.5"))
+                            .divide(BigDecimal.TEN, 0, java.math.RoundingMode.FLOOR)
+                            .intValue();
+                        int redeemPts = Math.min(requestedPts, maxRedeemablePts);
+                        // La remise correspond exactement aux points réellement consommés (aucune perte).
+                        BigDecimal loyaltyDiscount = BigDecimal.valueOf((long) redeemPts * 10)
+                            .setScale(2, java.math.RoundingMode.HALF_UP);
+                        BigDecimal baseAmount = rawBase.subtract(loyaltyDiscount).max(BigDecimal.ZERO);
+                        RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
+                            baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
+                        BigDecimal commission = breakdown.commissionAmount();
+                        BigDecimal deposit = breakdown.requestedUpfront();
+                        BigDecimal totalFinal = breakdown.totalDue();
 
-                        BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
-                        BigDecimal dPrice = hasDriverSelected
-                            ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
-                            : BigDecimal.ZERO;
-
-                        BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
-                        BigDecimal commission = baseAmount.multiply(RentalConstants.PLATFORM_COMMISSION_RATE);
-                        BigDecimal deposit = baseAmount.multiply(RentalConstants.DEPOSIT_RATE);
-                        BigDecimal totalFinal = baseAmount.add(commission).add(deposit);
+                        // R3 : on débite les points d'abord (échoue si solde insuffisant) puis on crée la résa.
+                        Mono<Void> doRedeem = redeemPts > 0
+                            ? loyaltyUseCase.redeem(clientId, redeemPts, null).then()
+                            : Mono.empty();
 
                         // SOLUTION ANTI-DOUBLON : On cherche si une réservation PENDING existe déjà
-                        return rentalRepository.findExistingPendingRental(clientId, request.vehicleId())
+                        return doRedeem.then(rentalRepository.findExistingPendingRental(clientId, request.vehicleId())
                             .flatMap(existingRental -> {
                                 // Mise à jour de la réservation existante (Upsert)
                                 existingRental.setDriverId(request.driverId());
                                 existingRental.setStartDate(request.startDate());
                                 existingRental.setEndDate(request.endDate());
                                 existingRental.setRentalType(request.rentalType());
-                                existingRental.setTotalAmount(totalFinal);
+                                existingRental.setTotalAmount(breakdown.totalDue());
                                 existingRental.setCommissionAmount(commission);
-                                existingRental.setDepositAmount(deposit);
+                                existingRental.setDepositAmount(breakdown.requestedUpfront());
+                                existingRental.setRentalAmount(breakdown.rentalAmount());
+                                existingRental.setCautionAmount(breakdown.cautionAmount());
+                                existingRental.setRequestedUpfront(breakdown.requestedUpfront());
                                 existingRental.setClientPhone(request.clientPhone());
                                 existingRental.setClientName(clientLabel);
                                 existingRental.setClientEmail(client.getEmail());
@@ -169,10 +202,17 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                     .endDate(request.endDate())
                                     .status(RentalStatus.PENDING)
                                     .rentalType(request.rentalType())
-                                    .totalAmount(totalFinal)
+                                    .totalAmount(breakdown.totalDue())
                                     .amountPaid(BigDecimal.ZERO)
                                     .commissionAmount(commission)
-                                    .depositAmount(deposit)
+                                    .depositAmount(breakdown.requestedUpfront())
+                                    .rentalAmount(breakdown.rentalAmount())
+                                    .cautionAmount(breakdown.cautionAmount())
+                                    .rentalAmountPaid(BigDecimal.ZERO)
+                                    .cautionAmountPaid(BigDecimal.ZERO)
+                                    .cautionHeld(BigDecimal.ZERO)
+                                    .requestedUpfront(breakdown.requestedUpfront())
+                                    .trackedKm(BigDecimal.ZERO)
                                     .clientPhone(request.clientPhone())
                                     .createdAt(LocalDateTime.now())
                                     .updatedAt(LocalDateTime.now())
@@ -183,8 +223,9 @@ public class RentalUseCaseImpl implements RentalUseCase {
                             .map(saved -> new RentalInitResponse(
                                 true,
                                 String.format(NotificationTemplate.RESERVATION_INIT_CLIENT.getTemplate(),
-                                    totalFinal.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE)),
-                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                                    breakdown.requestedUpfront()),
+                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                                breakdown, loyaltyDiscount
                             ))
                             // Notification agence : nouvelle réservation reçue
                             .flatMap(response -> notificationService.createNotification(
@@ -195,7 +236,7 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 request.vehicleId(),
                                 request.driverId(),
                                 NotificationTemplate.RESERVATION_INIT_AGENCY
-                            ).thenReturn(response));
+                            ).thenReturn(response)));
                     });
                 })));
     }
@@ -219,18 +260,14 @@ public class RentalUseCaseImpl implements RentalUseCase {
                 var driverPrice = tuple.getT2();
                 var agency = tuple.getT3();
 
-                long duration = RentalDurationCalculator.billableUnits(
-                    request.startDate(), request.endDate(), request.rentalType());
-
-                BigDecimal vPrice = RentalDurationCalculator.unitPrice(vehiclePrice, request.rentalType());
-                BigDecimal dPrice = (request.driverId() != null)
-                    ? RentalDurationCalculator.unitPrice(driverPrice, request.rentalType())
-                    : BigDecimal.ZERO;
-
-                BigDecimal baseAmount = vPrice.add(dPrice).multiply(BigDecimal.valueOf(duration));
-                BigDecimal commission = baseAmount.multiply(BigDecimal.valueOf(0.01));
-                BigDecimal deposit = baseAmount.multiply(BigDecimal.valueOf(0.10));
-                BigDecimal totalFinal = baseAmount.add(commission).add(deposit);
+                BigDecimal baseAmount = RentalDurationCalculator.computeBaseAmount(
+                    request.startDate(), request.endDate(), request.rentalType(),
+                    vehiclePrice, request.driverId() != null ? driverPrice : null);
+                RentalPricingBreakdown breakdown = RentalPricingCalculator.computeBreakdown(
+                    baseAmount, RentalConstants.PLATFORM_COMMISSION_RATE, agency.getDepositPercentage());
+                BigDecimal commission = breakdown.commissionAmount();
+                BigDecimal deposit = breakdown.requestedUpfront();
+                BigDecimal totalFinal = breakdown.totalDue();
 
                 return rentalRepository.countConflictingRentals(
                         request.vehicleId(), request.startDate(), request.endDate())
@@ -257,6 +294,13 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     .amountPaid(BigDecimal.ZERO)
                     .commissionAmount(commission)
                     .depositAmount(deposit)
+                    .rentalAmount(breakdown.rentalAmount())
+                    .cautionAmount(breakdown.cautionAmount())
+                    .rentalAmountPaid(BigDecimal.ZERO)
+                    .cautionAmountPaid(BigDecimal.ZERO)
+                    .cautionHeld(BigDecimal.ZERO)
+                    .requestedUpfront(breakdown.requestedUpfront())
+                    .trackedKm(BigDecimal.ZERO)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .isNewRecord(true)
@@ -266,13 +310,14 @@ public class RentalUseCaseImpl implements RentalUseCase {
                     .flatMap(saved -> {
                         BigDecimal counterAmount = request.initialPaymentAmount() != null
                             ? request.initialPaymentAmount()
-                            : totalFinal.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE);
+                            : breakdown.requestedUpfront();
                         PaymentMethod method = request.paymentMethod() != null
                             ? request.paymentMethod()
                             : PaymentMethod.CASH;
                         RentalInitResponse created = new RentalInitResponse(
                             true, "Réservation agence créée.",
-                            saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                            saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                            breakdown, java.math.BigDecimal.ZERO
                         );
                         if (counterAmount.compareTo(BigDecimal.ZERO) <= 0) {
                             return Mono.just(created);
@@ -281,15 +326,22 @@ public class RentalUseCaseImpl implements RentalUseCase {
                                 saved.getId(), new PaymentRequest(counterAmount, method))
                             .thenReturn(new RentalInitResponse(
                                 true, "Réservation confirmée — acompte encaissé au comptoir.",
-                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency)
+                                saved.getId(), totalFinal, deposit, commission, agencyMapper.toDto(agency),
+                                breakdown, java.math.BigDecimal.ZERO
                             ));
                     });
                     });
             }));
     }
 
+    /**
+     * @deprecated R2 — remplacé par {@link #checkIn(UUID, CheckInRequest)} qui capture
+     *     l'inspection CHECK_IN + le kilométrage de départ. Conservé pour rétro-compat.
+     */
+    @Deprecated
     @Transactional
     public Mono<RentalEntity> startRental(UUID rentalId) {
+        log.warn("startRental(rentalId={}) is deprecated — use /check-in instead", rentalId);
         return rentalRepository.findById(rentalId)
             .filter(r -> r.getStatus() == RentalStatus.PAID)
             .switchIfEmpty(Mono.error(new RentalConflictException("Rental must be fully paid (PAID) before start.")))
@@ -383,6 +435,292 @@ public class RentalUseCaseImpl implements RentalUseCase {
                      )
                  ).thenReturn(saved));
             });
+    }
+
+    // =====================================================================
+    // R2 — Cycle location complet : check-in / signal-end / check-out / settle
+    // =====================================================================
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> checkIn(UUID rentalId, CheckInRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.PAID) {
+                    return Mono.error(new ValidationException("MUST_BE_PAID"));
+                }
+                InspectionCreateRequest forced = forceInspectionType(request.inspection(), "CHECK_IN");
+                return inspectionUseCase.createInspection(rentalId, forced)
+                    .then(Mono.defer(() -> {
+                        rental.setStartOdometer(request.startOdometer());
+                        rental.setStatus(RentalStatus.ONGOING);
+                        rental.setUpdatedAt(LocalDateTime.now());
+                        return rentalRepository.save(rental);
+                    }))
+                    .flatMap(saved -> notifyClient(saved, NotificationReason.LOCATION_START,
+                            NotificationTemplate.CHECK_IN_DONE_CLIENT).thenReturn(saved));
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> signalEnd(UUID rentalId) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.ONGOING) {
+                    return Mono.error(new ValidationException("NOT_ONGOING"));
+                }
+                rental.setStatus(RentalStatus.UNDER_REVIEW);
+                rental.setUpdatedAt(LocalDateTime.now());
+                return rentalRepository.save(rental)
+                    .flatMap(saved -> notificationService.createNotification(
+                            saved.getId(), saved.getAgencyId(), NotificationResourceType.AGENCY,
+                            NotificationReason.LOCATION_END_SIGNAL, saved.getVehicleId(), saved.getDriverId(),
+                            NotificationTemplate.RETURN_UNDER_REVIEW_AGENCY)
+                        .thenReturn(saved));
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> checkOut(UUID rentalId, CheckOutRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.UNDER_REVIEW) {
+                    return Mono.error(new ValidationException("NOT_UNDER_REVIEW"));
+                }
+                InspectionCreateRequest forced = forceInspectionType(request.inspection(), "CHECK_OUT");
+                return inspectionUseCase.createInspection(rentalId, forced)
+                    .then(trackingUseCase.computeTrackedKm(rentalId).defaultIfEmpty(0.0))
+                    .map(gpsKm -> {
+                        rental.setEndOdometer(request.endOdometer());
+                        double km = gpsKm;
+                        if (km <= 0.0 && rental.getStartOdometer() != null && request.endOdometer() != null) {
+                            km = request.endOdometer() - rental.getStartOdometer();
+                        }
+                        rental.setTrackedKm(BigDecimal.valueOf(Math.max(0.0, km))
+                                .setScale(2, java.math.RoundingMode.HALF_UP));
+                        rental.setUpdatedAt(LocalDateTime.now());
+                        return rental;
+                    })
+                    .flatMap(rentalRepository::save);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> settleReturn(UUID rentalId, CheckoutSettlementRequest request) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                if (rental.getStatus() != RentalStatus.UNDER_REVIEW) {
+                    return Mono.error(new ValidationException("NOT_UNDER_REVIEW"));
+                }
+                BigDecimal damageCost = request.damageCost() == null
+                        ? BigDecimal.ZERO : request.damageCost();
+                BigDecimal held = rental.getCautionHeld() == null
+                        ? BigDecimal.ZERO : rental.getCautionHeld();
+                if (damageCost.signum() < 0) {
+                    return Mono.error(new ValidationException("DAMAGE_COST_NEGATIVE"));
+                }
+                if (damageCost.signum() > 0
+                        && (request.reason() == null || request.reason().isBlank())) {
+                    return Mono.error(new ValidationException("REASON_REQUIRED"));
+                }
+
+                // Retenue = min(dommages, caution) ; remboursement = le reste ;
+                // supplément dû (créance) = dommages au-delà de la caution.
+                BigDecimal deduction = damageCost.min(held).setScale(2, java.math.RoundingMode.HALF_UP);
+                BigDecimal refunded = held.subtract(deduction).setScale(2, java.math.RoundingMode.HALF_UP);
+                BigDecimal supplement = damageCost.subtract(held).max(BigDecimal.ZERO)
+                        .setScale(2, java.math.RoundingMode.HALF_UP);
+                rental.setCautionDeducted(deduction);
+                rental.setCautionRefunded(refunded);
+                rental.setSupplementDue(supplement);
+                rental.setStatus(RentalStatus.COMPLETED);
+                rental.setUpdatedAt(LocalDateTime.now());
+
+                Mono<Void> refundPayment = refunded.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, refunded, "CAUTION_REFUND", null, BigDecimal.ZERO)).then()
+                        : Mono.empty();
+                // Retenue caution = revenu de l'agence → rental_portion = deduction.
+                Mono<Void> retentionPayment = deduction.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, deduction, "CAUTION_RETENTION", request.reason(), deduction)).then()
+                        : Mono.empty();
+                // Créance : supplément dû (non encore encaissé) — trace, rental_portion=0 tant qu'impayé.
+                Mono<Void> supplementRecord = supplement.signum() > 0
+                        ? paymentRepository.save(buildCautionPayment(
+                                rentalId, supplement, "SUPPLEMENT_DUE", request.reason(), BigDecimal.ZERO)).then()
+                        : Mono.empty();
+
+                Mono<Void> escrowUpdate = agencyRepository.findById(rental.getAgencyId())
+                        .flatMap(agency -> {
+                            BigDecimal escrow = agency.getCautionEscrowBalance() == null
+                                    ? BigDecimal.ZERO : agency.getCautionEscrowBalance();
+                            agency.setCautionEscrowBalance(escrow.subtract(held));
+                            // Retenue caution = entrée pour l'agence.
+                            double rev = agency.getMonthlyRevenue() == null ? 0.0 : agency.getMonthlyRevenue();
+                            agency.setMonthlyRevenue(rev + deduction.doubleValue());
+                            return agencyRepository.save(agency);
+                        }).then();
+
+                Mono<Void> mileageUpdate = (rental.getStartOdometer() != null && rental.getEndOdometer() != null)
+                        ? vehicleRepository.findById(rental.getVehicleId())
+                            .flatMap(vehicle -> {
+                                double base = vehicle.getKilometrage() == null ? 0.0 : vehicle.getKilometrage();
+                                double delta = rental.getEndOdometer() - rental.getStartOdometer();
+                                vehicle.setKilometrage(base + Math.max(0.0, delta));
+                                return vehicleRepository.save(vehicle);
+                            }).then()
+                        : Mono.empty();
+
+                Mono<Void> notifyAndEmail;
+                if (deduction.signum() > 0) {
+                    Mono<Void> inApp = rental.getClientId() != null
+                            ? notificationService.createNotification(
+                                    rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                    NotificationReason.CAUTION_DEDUCTION, rental.getVehicleId(), rental.getDriverId(),
+                                    NotificationTemplate.CAUTION_DEDUCTION_APPLIED_CLIENT,
+                                    deduction, request.reason(), refunded).then()
+                            : Mono.empty();
+                    Mono<Void> email = rentalEmailPort.sendCautionDeduction(
+                            rental.getClientEmail(), deduction, request.reason(), refunded);
+                    notifyAndEmail = inApp.then(email);
+                } else {
+                    Mono<Void> inApp = rental.getClientId() != null
+                            ? notificationService.createNotification(
+                                    rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                    NotificationReason.REFUND_PROCESSED, rental.getVehicleId(), rental.getDriverId(),
+                                    NotificationTemplate.CAUTION_FULLY_REFUNDED_CLIENT, refunded).then()
+                            : Mono.empty();
+                    Mono<Void> email = rentalEmailPort.sendCautionFullyRefunded(rental.getClientEmail(), refunded);
+                    notifyAndEmail = inApp.then(email);
+                }
+
+                // Notification de dette si les dommages dépassent la caution.
+                Mono<Void> debtNotify = (supplement.signum() > 0 && rental.getClientId() != null)
+                        ? notificationService.createNotification(
+                                rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                                NotificationReason.CAUTION_DEDUCTION, rental.getVehicleId(), rental.getDriverId(),
+                                NotificationTemplate.CLIENT_DEBT_CREATED, supplement).then()
+                        : Mono.empty();
+
+                // R3 : gain de points de fidélité sur la part location encaissée (COMPLETED).
+                Mono<Void> earnLoyalty = rental.getClientId() != null
+                        ? loyaltyUseCase.earnFromRental(rental.getClientId(),
+                                rental.getRentalAmountPaid() == null ? BigDecimal.ZERO : rental.getRentalAmountPaid(),
+                                rental.getId()).then()
+                        : Mono.empty();
+
+                return rentalRepository.save(rental)
+                        .then(refundPayment)
+                        .then(retentionPayment)
+                        .then(supplementRecord)
+                        .then(escrowUpdate)
+                        .then(mileageUpdate)
+                        .then(notifyAndEmail)
+                        .then(debtNotify)
+                        .then(earnLoyalty)
+                        .thenReturn(rental);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    @Transactional
+    public Mono<RentalDetailResponseDTO> collectSupplement(UUID rentalId, BigDecimal amount) {
+        return rentalRepository.findById(rentalId)
+            .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
+            .flatMap(rental -> {
+                BigDecimal due = rental.getSupplementDue() == null ? BigDecimal.ZERO : rental.getSupplementDue();
+                BigDecimal amt = amount == null ? BigDecimal.ZERO : amount;
+                if (amt.signum() <= 0) {
+                    return Mono.error(new ValidationException("AMOUNT_REQUIRED"));
+                }
+                if (amt.compareTo(due) > 0) {
+                    return Mono.error(new ValidationException("EXCEEDS_SUPPLEMENT_DUE"));
+                }
+                rental.setSupplementDue(due.subtract(amt).setScale(2, java.math.RoundingMode.HALF_UP));
+                rental.setUpdatedAt(LocalDateTime.now());
+                // Encaissement du supplément = revenu agence (rental_portion = montant).
+                Mono<Void> payment = paymentRepository.save(buildCautionPayment(
+                        rentalId, amt, "SUPPLEMENT_PAID", null, amt)).then();
+                Mono<Void> revenue = agencyRepository.findById(rental.getAgencyId())
+                        .flatMap(agency -> {
+                            double rev = agency.getMonthlyRevenue() == null ? 0.0 : agency.getMonthlyRevenue();
+                            agency.setMonthlyRevenue(rev + amt.doubleValue());
+                            return agencyRepository.save(agency);
+                        }).then();
+                return rentalRepository.save(rental).then(payment).then(revenue).thenReturn(rental);
+            })
+            .flatMap(saved -> getRentalDetails(saved.getId()));
+    }
+
+    @Override
+    public Mono<BigDecimal> getClientDebtForAgency(UUID clientId, UUID agencyId) {
+        return agencyRepository.findById(agencyId)
+            .flatMap(agency -> agency.getOrganizationId() == null
+                ? Mono.just(BigDecimal.ZERO)
+                : rentalRepository.findClientDebtRentals(clientId, agency.getOrganizationId())
+                    .map(r -> r.getSupplementDue() == null ? BigDecimal.ZERO : r.getSupplementDue())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add))
+            .defaultIfEmpty(BigDecimal.ZERO);
+    }
+
+    @Override
+    public Flux<RentalEntity> getOrganizationDebts(UUID orgId) {
+        return rentalRepository.findOrganizationDebts(orgId);
+    }
+
+    @Override
+    public Flux<RentalEntity> getAgencyDebts(UUID agencyId) {
+        return rentalRepository.findAgencyDebts(agencyId);
+    }
+
+    @Override
+    public Mono<BigDecimal> getTotalOutstandingDebt() {
+        return rentalRepository.sumOutstandingDebt().defaultIfEmpty(BigDecimal.ZERO);
+    }
+
+    private Mono<Void> notifyClient(RentalEntity rental, NotificationReason reason, NotificationTemplate template) {
+        if (rental.getClientId() == null) {
+            return Mono.empty();
+        }
+        return notificationService.createNotification(
+                rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
+                reason, rental.getVehicleId(), rental.getDriverId(), template).then();
+    }
+
+    private InspectionCreateRequest forceInspectionType(InspectionCreateRequest src, String type) {
+        if (src == null) {
+            return new InspectionCreateRequest(type, null, null, null, null, null);
+        }
+        return new InspectionCreateRequest(
+                type, src.odometer(), src.fuelLevel(), src.notes(), src.photoUrls(), src.items());
+    }
+
+    private PaymentEntity buildCautionPayment(UUID rentalId, BigDecimal amount, String category,
+            String reason, BigDecimal rentalPortion) {
+        return PaymentEntity.builder()
+                .id(UUID.randomUUID())
+                .rentalId(rentalId)
+                .amount(amount)
+                .paymentMethod(PaymentMethod.CASH)
+                .transactionDate(LocalDateTime.now())
+                .transactionRef(reason)
+                .paymentCategory(category)
+                .rentalPortion(rentalPortion)
+                .cautionPortion(amount.subtract(rentalPortion))
+                .isNewRecord(true)
+                .build();
     }
 
     @Transactional

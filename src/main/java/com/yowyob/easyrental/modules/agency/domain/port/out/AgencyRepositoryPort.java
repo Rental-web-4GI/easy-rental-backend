@@ -27,4 +27,6 @@ public interface AgencyRepositoryPort {
     Flux<AgencyEntity> searchAgencies(String keyword, String city);
 
     Flux<AgencyEntity> findCatalogAgencies();
+
+    Mono<Long> count();
 }

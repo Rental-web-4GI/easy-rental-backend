@@ -39,6 +39,8 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     private final ApplicationEventPublisher eventPublisher;
     private final KernelClientProperties kernelProperties;
     private final KernelOrganizationAdapter kernelOrganizationAdapter;
+    private final com.yowyob.easyrental.modules.rating.domain.port.in.RatingUseCase ratingUseCase;
+    private final com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort userRepository;
 
     @Transactional
     public Mono<AgencyResponseDTO> createAgency(UUID orgId, AgencyRequestDTO request) {
@@ -180,7 +182,7 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
                 .timezone(request.timezone() != null ? request.timezone() : "Africa/Douala")
                 .workingHours(request.workingHours())
                 .allowOnlineBooking(request.allowOnlineBooking() != null ? request.allowOnlineBooking() : true)
-                .depositPercentage(request.depositPercentage())
+                .depositPercentage(request.depositPercentage() != null ? request.depositPercentage() : 0.0)
                 .logoUrl(request.logoUrl())
                 .primaryColor(request.primaryColor())
                 .secondaryColor(request.secondaryColor())
@@ -288,12 +290,26 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
     }
 
     public Flux<AgencyResponseDTO> getAllAgencies() {
-        return agencyRepository.findCatalogAgencies().map(agencyMapper::toDto);
+        return agencyRepository.findCatalogAgencies().flatMap(this::toCatalogDto, 16);
+    }
+
+    /**
+     * Comme {@link #toDtoWithAccountType} mais EXCLUT du catalogue les agences dont
+     * l'organisation est suspendue (cascade R3) — elles disparaissent de la marketplace.
+     */
+    private Mono<AgencyResponseDTO> toCatalogDto(AgencyEntity agency) {
+        if (agency.getOrganizationId() == null) {
+            return toDtoWithAccountType(agency);
+        }
+        return organizationRepository.findById(agency.getOrganizationId())
+                .map(org -> "SUSPENDED".equalsIgnoreCase(org.getStatus()))
+                .defaultIfEmpty(false)
+                .flatMap(suspended -> suspended ? Mono.empty() : toDtoWithAccountType(agency));
     }
 
     public Mono<AgencyResponseDTO> getAgency(UUID id) {
         return agencyRepository.findById(Objects.requireNonNull(id))
-                .map(agencyMapper::toDto)
+                .flatMap(this::toDtoWithAccountType)
                 .switchIfEmpty(Mono.error(new RuntimeException("Agence non trouvée")));
     }
 
@@ -302,7 +318,40 @@ public class AgencyUseCaseImpl implements AgencyUseCase {
         return agencyRepository.searchAgencies(
                 keyword != null && !keyword.isBlank() ? keyword : null,
                 city != null && !city.isBlank() ? city : null
-        ).map(agencyMapper::toDto);
+        ).flatMap(this::toCatalogDto, 16);
+    }
+
+    private Mono<AgencyResponseDTO> toDtoWithAccountType(AgencyEntity agency) {
+        Mono<String> accountTypeMono = agency.getOrganizationId() == null
+                ? Mono.just("")
+                : organizationRepository.findById(agency.getOrganizationId())
+                        .map(org -> org.getAccountType() == null ? "" : org.getAccountType())
+                        .defaultIfEmpty("");
+        Mono<com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO> statsMono =
+                ratingUseCase.getStatsForTarget("AGENCY", agency.getId())
+                        .onErrorReturn(new com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO(
+                                0.0, 0L, java.util.Map.of()));
+        // Option B : si l'agence n'a pas d'email propre, on résout celui du manager.
+        Mono<String> managerEmailMono = (isBlank(agency.getEmail()) && agency.getManagerId() != null)
+                ? userRepository.findById(agency.getManagerId())
+                        .map(u -> u.getEmail() == null ? "" : u.getEmail())
+                        .defaultIfEmpty("")
+                : Mono.just("");
+        return Mono.zip(accountTypeMono, statsMono, managerEmailMono)
+                .map(t -> {
+                    if (isBlank(agency.getEmail()) && !t.getT3().isEmpty()) {
+                        agency.setEmail(t.getT3());
+                    }
+                    return agencyMapper.toDto(
+                            agency,
+                            t.getT1().isEmpty() ? null : t.getT1(),
+                            t.getT2().average(),
+                            t.getT2().count());
+                });
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     @Transactional

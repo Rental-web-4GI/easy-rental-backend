@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!--
+      Nettoyage : certaines organisations avaient plusieurs abonnements ACTIVE
+      simultanés (bug historique des upgrades). On garde le plus récent par
+      organisation, les autres passent à SUPERSEDED.
+    -->
+    <changeSet id="39-dedup-active-subscriptions" author="release3">
+        <sql>
+            UPDATE subscriptions s SET status = 'SUPERSEDED'
+            WHERE s.status = 'ACTIVE'
+            AND s.id NOT IN (
+                SELECT DISTINCT ON (organization_id) id
+                FROM subscriptions
+                WHERE status = 'ACTIVE'
+                ORDER BY organization_id, start_date DESC
+            );
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

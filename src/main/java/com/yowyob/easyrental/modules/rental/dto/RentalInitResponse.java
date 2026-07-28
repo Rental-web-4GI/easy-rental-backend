@@ -11,5 +11,7 @@ public record RentalInitResponse(
     BigDecimal totalAmount,
     BigDecimal depositAmount,
     BigDecimal commissionAmount,
-    AgencyResponseDTO agencyDetails // Pour contacter l'agence si refusé
+    AgencyResponseDTO agencyDetails, // Pour contacter l'agence si refusé
+    RentalPricingBreakdown pricing, // R2 : ventilation location/caution/acompte 60%
+    java.math.BigDecimal loyaltyDiscount // R3 : remise fidélité appliquée (0 si aucune)
 ) {}

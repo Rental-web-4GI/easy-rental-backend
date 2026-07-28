@@ -23,5 +23,13 @@ public interface OrganizationRepositoryPort {
 
     Mono<OrganizationEntity> findByKernelOrganizationId(UUID kernelOrganizationId);
 
+    reactor.core.publisher.Mono<Long> countByStatus(String status);
+
     Flux<OrganizationEntity> findAllExpiredBefore(LocalDateTime threshold);
+
+    Mono<Long> count();
+
+    Mono<Long> countByAccountType(String accountType);
+
+    Mono<Long> countByGovernanceStatus(String governanceStatus);
 }

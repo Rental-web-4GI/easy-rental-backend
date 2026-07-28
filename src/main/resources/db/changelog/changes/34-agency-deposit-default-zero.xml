@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!--
+      La caution n'est pas obligatoire : le défaut passe de 30% à 0%.
+      Chaque agence peut relever ce taux dans ses paramètres si elle le souhaite.
+      On ne touche PAS aux agences existantes (elles gardent leur valeur) —
+      seul le défaut pour les futures lignes change.
+    -->
+    <changeSet id="34-agency-deposit-default-zero" author="release2-fix">
+        <sql>
+            ALTER TABLE agencies ALTER COLUMN deposit_percentage SET DEFAULT 0.0;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

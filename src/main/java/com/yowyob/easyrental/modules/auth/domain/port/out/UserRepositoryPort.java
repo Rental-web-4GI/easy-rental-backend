@@ -20,4 +20,10 @@ public interface UserRepositoryPort {
     Mono<UserEntity> save(UserEntity user);
 
     Mono<Void> clearUserReferences();
+
+    Mono<Long> count();
+
+    Mono<Long> countByRole(String role);
+
+    Mono<Long> countByAccountType(String accountType);
 }

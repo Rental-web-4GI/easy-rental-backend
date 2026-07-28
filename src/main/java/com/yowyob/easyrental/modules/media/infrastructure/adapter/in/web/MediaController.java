@@ -45,32 +45,39 @@ public class MediaController {
     @GetMapping("/kernel-file/{fileId}")
     public Mono<ResponseEntity<byte[]>> proxyKernelFile(@PathVariable String fileId) {
         // Force un refresh du token app : les tokens cachés peuvent être
-        // invalidés côté Kernel sans qu'on le détecte (401 sinon).
+        // invalidés côté Kernel sans qu'on le détecte (401 sinon). On retente
+        // une fois sur 401 avec un token re-rafraîchi (file-core rejette le
+        // token par intermittence — sans ce retry l'image ne charge pas).
         return appTokenProvider.freshToken()
-                .flatMap(appToken -> {
-                    log.info("[proxy-kernel-file] fileId={} tokenPresent={}", fileId, appToken.isPresent());
-                    return kernelWebClient.get()
-                            .uri("/api/files/" + fileId)
-                            .headers(headers -> {
-                                headers.set("X-Client-Id", kernelProperties.getClientId());
-                                headers.set("X-Api-Key", kernelProperties.getApiKey());
-                                headers.set("X-Tenant-Id", kernelProperties.getTenantId());
-                                appToken.ifPresent(token ->
-                                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
-                            })
-                            .exchangeToMono(response -> response.bodyToMono(byte[].class)
-                                    .defaultIfEmpty(new byte[0])
-                                    .map(bytes -> {
-                                        MediaType ct = response.headers().contentType()
-                                                .orElse(MediaType.APPLICATION_OCTET_STREAM);
-                                        log.info("[proxy-kernel-file] status={} → {} bytes ({})",
-                                                response.statusCode(), bytes.length, ct);
-                                        return ResponseEntity.status(response.statusCode())
-                                                .contentType(ct)
-                                                .body(bytes);
-                                    }))
-                            .doOnError(ex -> log.error("[proxy-kernel-file] error: {}", ex.getMessage(), ex));
-                });
+                .flatMap(appToken -> fetchKernelFile(fileId, appToken))
+                .flatMap(response -> response.getStatusCode().value() == 401
+                        ? appTokenProvider.freshToken().flatMap(fresh -> fetchKernelFile(fileId, fresh))
+                        : Mono.just(response));
+    }
+
+    private Mono<ResponseEntity<byte[]>> fetchKernelFile(String fileId, java.util.Optional<String> appToken) {
+        log.info("[proxy-kernel-file] fileId={} tokenPresent={}", fileId, appToken.isPresent());
+        return kernelWebClient.get()
+                .uri("/api/files/" + fileId)
+                .headers(headers -> {
+                    headers.set("X-Client-Id", kernelProperties.getClientId());
+                    headers.set("X-Api-Key", kernelProperties.getApiKey());
+                    headers.set("X-Tenant-Id", kernelProperties.getTenantId());
+                    appToken.ifPresent(token ->
+                            headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+                })
+                .exchangeToMono(response -> response.bodyToMono(byte[].class)
+                        .defaultIfEmpty(new byte[0])
+                        .map(bytes -> {
+                            MediaType ct = response.headers().contentType()
+                                    .orElse(MediaType.APPLICATION_OCTET_STREAM);
+                            log.info("[proxy-kernel-file] status={} → {} bytes ({})",
+                                    response.statusCode(), bytes.length, ct);
+                            return ResponseEntity.status(response.statusCode())
+                                    .contentType(ct)
+                                    .body(bytes);
+                        }))
+                .doOnError(ex -> log.error("[proxy-kernel-file] error: {}", ex.getMessage(), ex));
     }
 
     // DTO simple pour la réponse

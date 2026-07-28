@@ -66,6 +66,39 @@ public class AdminOrganizationController {
         return governanceCall(id, reason, /*approve=*/false);
     }
 
+    @Operation(summary = "Suspendre une organisation (cascade : agences masquées, login bloqué)")
+    @PostMapping("/{id}/suspend")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<ResponseEntity<OrganizationEntity>> suspend(
+            @PathVariable UUID id,
+            @RequestBody(required = false) GovernanceRequest body) {
+        String reason = body != null && body.reason() != null ? body.reason() : "Suspendue par l'administrateur";
+        return orgRepository.findById(id)
+                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable: " + id)))
+                .flatMap(org -> {
+                    org.setStatus("SUSPENDED");
+                    org.setSuspendedAt(java.time.LocalDateTime.now());
+                    org.setSuspensionReason(reason);
+                    return orgRepository.save(org);
+                })
+                .map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Réactiver une organisation suspendue")
+    @PostMapping("/{id}/reactivate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Mono<ResponseEntity<OrganizationEntity>> reactivate(@PathVariable UUID id) {
+        return orgRepository.findById(id)
+                .switchIfEmpty(Mono.error(new RuntimeException("Organisation introuvable: " + id)))
+                .flatMap(org -> {
+                    org.setStatus("ACTIVE");
+                    org.setSuspendedAt(null);
+                    org.setSuspensionReason(null);
+                    return orgRepository.save(org);
+                })
+                .map(ResponseEntity::ok);
+    }
+
     private Mono<ResponseEntity<OrganizationEntity>> governanceCall(UUID orgId, String reason, boolean approve) {
         String verb = approve ? "approve" : "reject";
         log.info("[admin-org] {} demandé pour orgId local={}", verb, orgId);

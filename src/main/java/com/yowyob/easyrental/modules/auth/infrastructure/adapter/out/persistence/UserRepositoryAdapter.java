@@ -43,4 +43,19 @@ public class UserRepositoryAdapter implements UserRepositoryPort {
     public Mono<Void> clearUserReferences() {
         return userRepository.clearUserReferences();
     }
+
+    @Override
+    public Mono<Long> count() {
+        return userRepository.count();
+    }
+
+    @Override
+    public Mono<Long> countByRole(String role) {
+        return userRepository.countByRole(role);
+    }
+
+    @Override
+    public Mono<Long> countByAccountType(String accountType) {
+        return userRepository.countByAccountType(accountType);
+    }
 }

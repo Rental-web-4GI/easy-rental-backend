@@ -5,6 +5,9 @@ import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalPaymentUseCase;
 import com.yowyob.easyrental.modules.rental.domain.port.in.RentalUseCase;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckOutRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
 import com.yowyob.easyrental.modules.rental.dto.PaymentRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
@@ -104,6 +107,77 @@ public class RentalController {
     @PutMapping("/{id}/cancel")
     public Mono<ResponseEntity<RentalEntity>> cancelRental(@PathVariable UUID id) {
         return rentalUseCase.cancelRental(id).map(ResponseEntity::ok);
+    }
+
+    // ===================================================================
+    // R2 — Cycle location complet (inspections + caution)
+    // Nouveaux chemins pour ne pas casser les endpoints legacy ci-dessus.
+    // ===================================================================
+
+    @Operation(summary = "Check-in (vehicle pickup) with CHECK_IN inspection + start odometer")
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> checkIn(
+            @PathVariable UUID id,
+            @RequestBody CheckInRequest request) {
+        return rentalUseCase.checkIn(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Signal rental end — R2 (client), returns full detail")
+    @PostMapping("/{id}/signal-end")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('CLIENT') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> signalEndR2(@PathVariable UUID id) {
+        return rentalUseCase.signalEnd(id).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Check-out (vehicle drop-off) with CHECK_OUT inspection + end odometer")
+    @PostMapping("/{id}/check-out")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> checkOut(
+            @PathVariable UUID id,
+            @RequestBody CheckOutRequest request) {
+        return rentalUseCase.checkOut(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Settle return — apply caution deduction/refund and complete")
+    @PutMapping("/{id}/settle-return")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> settleReturn(
+            @PathVariable UUID id,
+            @RequestBody CheckoutSettlementRequest request) {
+        return rentalUseCase.settleReturn(id, request).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Collect the outstanding supplement (créance) owed by the client")
+    @PostMapping("/{id}/collect-supplement")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('ORGANIZATION') or hasRole('STAFF')")
+    public Mono<ResponseEntity<RentalDetailResponseDTO>> collectSupplement(
+            @PathVariable UUID id,
+            @RequestBody java.util.Map<String, java.math.BigDecimal> body) {
+        return rentalUseCase.collectSupplement(id, body.get("amount")).map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Client's outstanding debt within the given agency's organization")
+    @GetMapping("/debt/client/{clientId}/agency/{agencyId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF','CLIENT')")
+    public Mono<ResponseEntity<java.util.Map<String, java.math.BigDecimal>>> clientDebt(
+            @PathVariable UUID clientId, @PathVariable UUID agencyId) {
+        return rentalUseCase.getClientDebtForAgency(clientId, agencyId)
+                .map(d -> ResponseEntity.ok(java.util.Map.of("debt", d)));
+    }
+
+    @Operation(summary = "All unpaid debts of an organization")
+    @GetMapping("/debts/organization/{orgId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF')")
+    public Flux<RentalEntity> organizationDebts(@PathVariable UUID orgId) {
+        return rentalUseCase.getOrganizationDebts(orgId);
+    }
+
+    @Operation(summary = "All unpaid debts attached to an agency")
+    @GetMapping("/debts/agency/{agencyId}")
+    @PreAuthorize("hasAnyRole('ADMIN','ORGANIZATION','STAFF')")
+    public Flux<RentalEntity> agencyDebts(@PathVariable UUID agencyId) {
+        return rentalUseCase.getAgencyDebts(agencyId);
     }
 
     @Operation(summary = "Client active reservations")

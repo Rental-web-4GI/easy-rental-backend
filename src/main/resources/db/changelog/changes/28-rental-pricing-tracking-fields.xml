@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <changeSet id="28-rental-pricing-tracking-fields" author="release2">
+        <sql>
+            ALTER TABLE rentals
+            ADD COLUMN IF NOT EXISTS rental_amount NUMERIC(19,2),
+            ADD COLUMN IF NOT EXISTS caution_amount NUMERIC(19,2),
+            ADD COLUMN IF NOT EXISTS rental_amount_paid NUMERIC(19,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS caution_amount_paid NUMERIC(19,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS caution_held NUMERIC(19,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS caution_deducted NUMERIC(19,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS caution_refunded NUMERIC(19,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS requested_upfront NUMERIC(19,2),
+            ADD COLUMN IF NOT EXISTS start_odometer INTEGER,
+            ADD COLUMN IF NOT EXISTS end_odometer INTEGER,
+            ADD COLUMN IF NOT EXISTS tracked_km NUMERIC(10,2) DEFAULT 0;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

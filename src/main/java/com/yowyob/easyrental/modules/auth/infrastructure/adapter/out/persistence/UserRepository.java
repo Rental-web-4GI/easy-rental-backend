@@ -18,4 +18,8 @@ public interface UserRepository extends R2dbcRepository<UserEntity, UUID> {
     @Modifying
     @Query("UPDATE users SET organization_id = null, agency_id = null, poste_id = null")
     Mono<Void> clearUserReferences();
+
+    Mono<Long> countByRole(String role);
+
+    Mono<Long> countByAccountType(String accountType);
 }

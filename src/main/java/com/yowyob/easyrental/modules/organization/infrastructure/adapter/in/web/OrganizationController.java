@@ -69,6 +69,13 @@ public class OrganizationController {
         return organizationUseCase.completeOnboarding(request).map(ResponseEntity::ok);
     }
 
+    @Operation(summary = "Passer d'un compte freelance à un compte organisation (idempotent)")
+    @PutMapping("/upgrade-to-company")
+    @PreAuthorize("hasRole('ORGANIZATION')")
+    public Mono<ResponseEntity<OrgResponseDTO>> upgradeToCompany() {
+        return organizationUseCase.upgradeToCompanyForCurrentUser().map(ResponseEntity::ok);
+    }
+
     @Operation(summary = "Mettre à jour une organisation (JSON)")
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ORGANIZATION')")

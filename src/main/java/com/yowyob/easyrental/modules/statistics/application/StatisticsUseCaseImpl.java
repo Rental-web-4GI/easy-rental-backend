@@ -1,14 +1,21 @@
 package com.yowyob.easyrental.modules.statistics.application;
 
 import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
+import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
+import com.yowyob.easyrental.modules.organization.domain.port.out.OrganizationRepositoryPort;
+import com.yowyob.easyrental.modules.rental.domain.port.out.RentalRepositoryPort;
 import com.yowyob.easyrental.modules.statistics.dto.AgencyComparisonDTO;
 import com.yowyob.easyrental.modules.statistics.dto.AgencyStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.DistributionDataDTO;
 import com.yowyob.easyrental.modules.statistics.dto.FullDashboardDTO;
 import com.yowyob.easyrental.modules.statistics.dto.GlobalStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.OrgStatsDTO;
+import com.yowyob.easyrental.modules.statistics.dto.PlatformStatsDTO;
 import com.yowyob.easyrental.modules.statistics.dto.TimeSeriesDataDTO;
 import com.yowyob.easyrental.modules.statistics.domain.port.in.StatisticsUseCase;
+import com.yowyob.easyrental.modules.subscription.domain.port.out.SubscriptionRepositoryPort;
+import com.yowyob.easyrental.modules.vehicle.domain.port.out.VehicleRepositoryPort;
+import com.yowyob.easyrental.shared.enums.RentalStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
@@ -27,6 +34,11 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private final DatabaseClient databaseClient;
     private final AgencyRepositoryPort agencyRepository;
+    private final UserRepositoryPort userRepository;
+    private final OrganizationRepositoryPort organizationRepository;
+    private final VehicleRepositoryPort vehicleRepository;
+    private final RentalRepositoryPort rentalRepository;
+    private final SubscriptionRepositoryPort subscriptionRepository;
 
     public Mono<FullDashboardDTO> getAgencyDashboard(UUID agencyId, int year) {
         return Mono.zip(
@@ -82,9 +94,11 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id) as total_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'ONGOING') as active_rentals,
                 (SELECT COUNT(*) FROM rentals WHERE agency_id = :id AND status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0)
+                    FROM payments p JOIN rentals r ON p.rental_id = r.id
                     WHERE r.agency_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(amount), 0) FROM payments p JOIN rentals r ON p.rental_id = r.id
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0)
+                    FROM payments p JOIN rentals r ON p.rental_id = r.id
                     WHERE r.agency_id = :id
                     AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
         """;
@@ -106,7 +120,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private Mono<TimeSeriesDataDTO> getRevenueEvolution(UUID agencyId, int year) {
         String sql = """
-            SELECT TO_CHAR(transaction_date, 'Mon') as month, SUM(amount) as total
+            SELECT TO_CHAR(transaction_date, 'Mon') as month,
+                   SUM(COALESCE(p.rental_portion, p.amount)) as total
             FROM payments p JOIN rentals r ON p.rental_id = r.id
             WHERE r.agency_id = :id AND EXTRACT(YEAR FROM transaction_date) = :year
             GROUP BY EXTRACT(MONTH FROM transaction_date), TO_CHAR(transaction_date, 'Mon')
@@ -160,10 +175,10 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     WHERE a.organization_id = :id AND r.status = 'ONGOING') as active_rentals,
                 (SELECT COUNT(*) FROM rentals r JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id AND r.status = 'RESERVED') as reservations,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p
                     JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id) as total_rev,
-                (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+                (SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p
                     JOIN rentals r ON p.rental_id = r.id JOIN agencies a ON r.agency_id = a.id
                     WHERE a.organization_id = :id
                     AND EXTRACT(MONTH FROM p.transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE)) as month_rev
@@ -186,7 +201,8 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
 
     private Mono<TimeSeriesDataDTO> getRevenueEvolutionForOrg(List<UUID> agencyIds, int year) {
         String sql = """
-            SELECT TO_CHAR(transaction_date, 'Mon') as month, SUM(amount) as total
+            SELECT TO_CHAR(transaction_date, 'Mon') as month,
+                   SUM(COALESCE(p.rental_portion, p.amount)) as total
             FROM payments p JOIN rentals r ON p.rental_id = r.id
             WHERE r.agency_id IN (:ids) AND EXTRACT(YEAR FROM transaction_date) = :year
             GROUP BY EXTRACT(MONTH FROM transaction_date), TO_CHAR(transaction_date, 'Mon')
@@ -259,7 +275,7 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     .bind("id", agency.getId()).map(row -> row.get(0, Long.class)).one();
 
                 Mono<BigDecimal> revenue = databaseClient.sql(
-                        "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+                        "SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p "
                         + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :id")
                     .bind("id", agency.getId()).map(row -> row.get(0, BigDecimal.class)).one();
 
@@ -286,7 +302,7 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
             ? "EXTRACT(YEAR FROM created_at) = :year"
             : "EXTRACT(YEAR FROM created_at) = :year AND EXTRACT(MONTH FROM created_at) = :month";
 
-        String revSql = "SELECT COALESCE(SUM(p.amount), 0) FROM payments p "
+        String revSql = "SELECT COALESCE(SUM(COALESCE(p.rental_portion, p.amount)), 0) FROM payments p "
                 + "JOIN rentals r ON p.rental_id = r.id WHERE r.agency_id = :agencyId "
                 + "AND EXTRACT(YEAR FROM p.transaction_date) = :year"
                 + (month != null ? " AND EXTRACT(MONTH FROM p.transaction_date) = :month" : "");
@@ -381,5 +397,103 @@ public class StatisticsUseCaseImpl implements StatisticsUseCase {
                     agencyStatsList
                 );
             });
+    }
+
+    // ==========================================
+    // STATS PLATEFORME (ADMIN)
+    // ==========================================
+
+    @Override
+    public Mono<PlatformStatsDTO> getPlatformStats() {
+        Mono<PlatformStatsDTO.UserCounts> userCountsMono = Mono.zip(
+                userRepository.count(),
+                userRepository.countByRole("CLIENT"),
+                userRepository.countByRole("ORGANIZATION"),
+                userRepository.countByAccountType("FREELANCE"),
+                userRepository.countByRole("STAFF")
+        ).map(t -> new PlatformStatsDTO.UserCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4(), t.getT5()));
+
+        Mono<PlatformStatsDTO.OrgCounts> orgCountsMono = Mono.zip(
+                organizationRepository.count(),
+                organizationRepository.countByAccountType("COMPANY"),
+                organizationRepository.countByAccountType("FREELANCE"),
+                organizationRepository.countByStatus("SUSPENDED").defaultIfEmpty(0L)
+        ).map(t -> new PlatformStatsDTO.OrgCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
+
+        Mono<PlatformStatsDTO.AgencyCounts> agencyCountsMono = Mono.zip(
+                agencyRepository.count(),
+                organizationRepository.countByAccountType("COMPANY")
+        ).map(t -> {
+            long totalAgencies = t.getT1();
+            long companies = t.getT2();
+            double average = companies > 0 ? (double) totalAgencies / companies : 0.0;
+            return new PlatformStatsDTO.AgencyCounts(totalAgencies, average);
+        });
+
+        Mono<PlatformStatsDTO.VehicleCounts> vehicleCountsMono = Mono.zip(
+                vehicleRepository.count(),
+                vehicleRepository.countByStatut("AVAILABLE")
+        ).map(t -> new PlatformStatsDTO.VehicleCounts(t.getT1(), t.getT2()));
+
+        Mono<PlatformStatsDTO.RentalCounts> rentalCountsMono = Mono.zip(
+                rentalRepository.count(),
+                rentalRepository.countByStatus(RentalStatus.ONGOING),
+                rentalRepository.countByStatus(RentalStatus.COMPLETED),
+                rentalRepository.countCompletedThisMonth()
+        ).map(t -> new PlatformStatsDTO.RentalCounts(t.getT1(), t.getT2(), t.getT3(), t.getT4()));
+
+        Mono<BigDecimal> outstandingDebtMono = rentalRepository.sumOutstandingDebt()
+                .defaultIfEmpty(BigDecimal.ZERO);
+        Mono<PlatformStatsDTO.RevenueSummary> revenueMono = Mono.zip(
+                subscriptionRepository.sumActivePlanPrices().defaultIfEmpty(BigDecimal.ZERO),
+                subscriptionRepository.countActiveOrganizations().defaultIfEmpty(0L),
+                outstandingDebtMono
+        ).map(t -> new PlatformStatsDTO.RevenueSummary(
+                t.getT1() != null ? t.getT1() : BigDecimal.ZERO,
+                t.getT2(),
+                t.getT3() != null ? t.getT3() : BigDecimal.ZERO
+        ));
+
+        return Mono.zip(userCountsMono, orgCountsMono, agencyCountsMono, vehicleCountsMono,
+                        rentalCountsMono, revenueMono)
+                .map(t -> new PlatformStatsDTO(
+                        t.getT1(), t.getT2(), t.getT3(), t.getT4(), t.getT5(), t.getT6()
+                ));
+    }
+
+    @Override
+    public reactor.core.publisher.Flux<com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO>
+            listActiveSubscriptionsBilling() {
+        String sql = """
+                SELECT s.id            AS subscription_id,
+                       s.organization_id,
+                       o.name          AS organization_name,
+                       o.email         AS organization_email,
+                       o.account_type,
+                       s.plan_type,
+                       p.price,
+                       s.status,
+                       s.start_date,
+                       s.end_date
+                FROM subscriptions s
+                JOIN organizations o        ON o.id   = s.organization_id
+                LEFT JOIN subscription_plans p ON p.name = s.plan_type
+                WHERE s.status = 'ACTIVE'
+                ORDER BY p.price DESC NULLS LAST, s.start_date DESC
+                """;
+        return databaseClient.sql(sql)
+                .map((row, meta) -> new com.yowyob.easyrental.modules.statistics.dto.SubscriptionBillingDTO(
+                        row.get("subscription_id", java.util.UUID.class),
+                        row.get("organization_id", java.util.UUID.class),
+                        row.get("organization_name", String.class),
+                        row.get("organization_email", String.class),
+                        row.get("account_type", String.class),
+                        row.get("plan_type", String.class),
+                        row.get("price", java.math.BigDecimal.class),
+                        row.get("status", String.class),
+                        row.get("start_date", java.time.LocalDateTime.class),
+                        row.get("end_date", java.time.LocalDateTime.class)
+                ))
+                .all();
     }
 }

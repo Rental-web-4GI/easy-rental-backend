@@ -42,6 +42,10 @@ class AgencyUseCaseImplTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private KernelClientProperties kernelProperties;
+    @Mock
+    private com.yowyob.easyrental.modules.rating.domain.port.in.RatingUseCase ratingUseCase;
+    @Mock
+    private com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort userRepository;
 
     @InjectMocks
     private AgencyUseCaseImpl agencyUseCase;
@@ -49,6 +53,9 @@ class AgencyUseCaseImplTest {
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         lenient().when(kernelProperties.isIntegrationEnabled()).thenReturn(false);
+        lenient().when(ratingUseCase.getStatsForTarget(any(), any()))
+                .thenReturn(Mono.just(new com.yowyob.easyrental.modules.rating.dto.RatingStatsDTO(
+                        0.0, 0L, java.util.Map.of())));
     }
 
     @Test
@@ -68,7 +75,7 @@ class AgencyUseCaseImplTest {
         AgencyResponseDTO dto = mock(AgencyResponseDTO.class);
         when(dto.name()).thenReturn("Agency Douala");
         when(agencyRepository.findById(id)).thenReturn(Mono.just(entity));
-        when(agencyMapper.toDto(entity)).thenReturn(dto);
+        when(agencyMapper.toDto(any(), any(), any(), any())).thenReturn(dto);
 
         StepVerifier.create(agencyUseCase.getAgency(id))
                 .expectNextMatches(r -> r.name().equals("Agency Douala"))
@@ -150,7 +157,7 @@ class AgencyUseCaseImplTest {
     void shouldListAllAgencies() {
         AgencyEntity entity = AgencyEntity.builder().id(UUID.randomUUID()).name("All").build();
         when(agencyRepository.findCatalogAgencies()).thenReturn(Flux.just(entity));
-        when(agencyMapper.toDto(entity)).thenReturn(mock(AgencyResponseDTO.class));
+        when(agencyMapper.toDto(any(), any(), any(), any())).thenReturn(mock(AgencyResponseDTO.class));
 
         StepVerifier.create(agencyUseCase.getAllAgencies())
                 .expectNextCount(1)
@@ -161,7 +168,7 @@ class AgencyUseCaseImplTest {
     void shouldSearchAgencies() {
         AgencyEntity entity = AgencyEntity.builder().id(UUID.randomUUID()).name("Search").build();
         when(agencyRepository.searchAgencies("douala", "Douala")).thenReturn(Flux.just(entity));
-        when(agencyMapper.toDto(entity)).thenReturn(mock(AgencyResponseDTO.class));
+        when(agencyMapper.toDto(any(), any(), any(), any())).thenReturn(mock(AgencyResponseDTO.class));
 
         StepVerifier.create(agencyUseCase.searchAgencies("douala", "Douala"))
                 .expectNextCount(1)

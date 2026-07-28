@@ -12,5 +12,6 @@ public record RentalInitRequest(
     @NotNull @JsonAlias("start_date") LocalDateTime startDate,
     @NotNull @JsonAlias("end_date") LocalDateTime endDate,
     @NotNull @JsonAlias("rental_type") RentalType rentalType,
-    @NotNull @JsonAlias("client_phone") String clientPhone
+    @NotNull @JsonAlias("client_phone") String clientPhone,
+    @JsonAlias("redeem_points") Integer redeemPoints
 ) {}

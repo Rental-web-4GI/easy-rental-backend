@@ -456,5 +456,21 @@
     <include file="db/changelog/changes/21-users-kernel-principal.xml"/>
     <include file="db/changelog/changes/22-seed-freelance-plans.xml"/>
     <include file="db/changelog/changes/23-users-account-type.xml"/>
+    <include file="db/changelog/changes/24-audit-events.xml"/>
+    <include file="db/changelog/changes/25-loyalty-ledger.xml"/>
+    <include file="db/changelog/changes/26-ratings.xml"/>
+    <include file="db/changelog/changes/27-audit-metadata-text.xml"/>
+    <include file="db/changelog/changes/28-rental-pricing-tracking-fields.xml"/>
+    <include file="db/changelog/changes/29-payment-portions.xml"/>
+    <include file="db/changelog/changes/30-agency-escrow.xml"/>
+    <include file="db/changelog/changes/31-inspections.xml"/>
+    <include file="db/changelog/changes/32-inspection-items.xml"/>
+    <include file="db/changelog/changes/33-rental-positions.xml"/>
+    <include file="db/changelog/changes/34-agency-deposit-default-zero.xml"/>
+    <include file="db/changelog/changes/35-rental-supplement-due.xml"/>
+    <include file="db/changelog/changes/36-org-suspension.xml"/>
+    <include file="db/changelog/changes/37-conversations.xml"/>
+    <include file="db/changelog/changes/38-disputes.xml"/>
+    <include file="db/changelog/changes/39-dedup-active-subscriptions.xml"/>
 
 </databaseChangeLog>

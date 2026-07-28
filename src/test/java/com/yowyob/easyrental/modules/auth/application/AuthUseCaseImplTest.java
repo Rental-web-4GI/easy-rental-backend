@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yowyob.easyrental.config.EasyRentalProperties;
 import com.yowyob.easyrental.kernel.config.KernelClientProperties;
 import com.yowyob.easyrental.kernel.infrastructure.dto.KernelLoginResult;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.dto.AuthResponse;
@@ -78,6 +79,8 @@ class AuthUseCaseImplTest {
     private EasyRentalProperties easyRentalProperties;
     @Mock
     private com.yowyob.easyrental.kernel.infrastructure.adapter.KernelTpAdapter kernelTpAdapter;
+    @Mock
+    private AuditUseCase auditUseCase;
 
     @InjectMocks
     private AuthUseCaseImpl authUseCase;
@@ -88,6 +91,9 @@ class AuthUseCaseImplTest {
         EasyRentalProperties.Client client = new EasyRentalProperties.Client();
         client.setSkipKernelAuth(true);
         org.mockito.Mockito.lenient().when(easyRentalProperties.getClient()).thenReturn(client);
+        org.mockito.Mockito.lenient()
+                .when(auditUseCase.record(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(Mono.empty());
     }
 
     @Test

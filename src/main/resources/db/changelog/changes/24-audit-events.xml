@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <changeSet id="24-audit-events" author="release1">
+        <sql>
+            CREATE TABLE audit_events (
+                id UUID PRIMARY KEY,
+                user_id UUID NULL,
+                action VARCHAR(64) NOT NULL,
+                resource_type VARCHAR(64) NULL,
+                resource_id UUID NULL,
+                ip VARCHAR(45) NULL,
+                user_agent TEXT NULL,
+                metadata JSONB NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX idx_audit_events_user_created ON audit_events(user_id, created_at DESC);
+            CREATE INDEX idx_audit_events_action_created ON audit_events(action, created_at DESC);
+        </sql>
+    </changeSet>
+</databaseChangeLog>

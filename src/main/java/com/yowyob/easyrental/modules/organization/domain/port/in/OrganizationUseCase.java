@@ -28,6 +28,7 @@ public interface OrganizationUseCase {
             FilePart licenseFile);
     Mono<Boolean> validateQuota(UUID orgId, String resourceType);
     Mono<OrgUserResponseDTO> getCurrentOrgAndUser();
+    Mono<OrgResponseDTO> upgradeToCompanyForCurrentUser();
     Flux<OrgResponseDTO> getOrganizationsByPlan(UUID planId);
     Mono<SubscriptionResponseDTO> toggleAutoRenewWithResponse(UUID orgId, boolean enabled);
     Mono<SubscriptionResponseDTO> getOrgSubscriptionStatus(UUID orgId);

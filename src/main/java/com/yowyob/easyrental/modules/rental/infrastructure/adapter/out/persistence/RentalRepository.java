@@ -30,6 +30,40 @@ public interface RentalRepository extends R2dbcRepository<RentalEntity, UUID> {
     """)
     Flux<RentalEntity> findAllByOrganizationIdAndStatusIn(UUID orgId, List<RentalStatus> statuses);
 
+    /** Dossiers du client, dans les agences d'une organisation, avec dette (supplément) impayée. */
+    @Query("""
+        SELECT r.*
+        FROM rentals r
+        JOIN agencies a ON r.agency_id = a.id
+        WHERE a.organization_id = :orgId
+        AND r.client_id = :clientId
+        AND COALESCE(r.supplement_due, 0) > 0
+        ORDER BY r.updated_at ASC
+    """)
+    Flux<RentalEntity> findClientDebtRentals(UUID clientId, UUID orgId);
+
+    /** Toutes les dettes (suppléments impayés) d'une organisation, plus récentes d'abord. */
+    @Query("""
+        SELECT r.*
+        FROM rentals r
+        JOIN agencies a ON r.agency_id = a.id
+        WHERE a.organization_id = :orgId
+        AND COALESCE(r.supplement_due, 0) > 0
+        ORDER BY r.updated_at DESC
+    """)
+    Flux<RentalEntity> findOrganizationDebts(UUID orgId);
+
+    /** Dettes rattachées à une agence précise. */
+    @Query("""
+        SELECT * FROM rentals
+        WHERE agency_id = :agencyId AND COALESCE(supplement_due, 0) > 0
+        ORDER BY updated_at DESC
+    """)
+    Flux<RentalEntity> findAgencyDebts(UUID agencyId);
+
+    @Query("SELECT COALESCE(SUM(supplement_due), 0) FROM rentals WHERE COALESCE(supplement_due,0) > 0")
+    Mono<java.math.BigDecimal> sumOutstandingDebt();
+
     // NOUVEAU : Chercher une réservation PENDING existante pour éviter les doublons
     @Query("SELECT * FROM rentals WHERE client_id = :clientId AND vehicle_id = :vehicleId AND status = 'PENDING' LIMIT"
             + " 1")
@@ -38,4 +72,11 @@ public interface RentalRepository extends R2dbcRepository<RentalEntity, UUID> {
     @Query("SELECT COUNT(*) FROM rentals WHERE vehicle_id = :vehicleId AND start_date < :checkEnd AND end_date >"
             + " :checkStart AND status NOT IN ('CANCELLED', 'COMPLETED')")
     Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime checkStart, LocalDateTime checkEnd);
+
+    Mono<Long> countByStatus(RentalStatus status);
+
+    @Query("SELECT COUNT(*) FROM rentals WHERE status = 'COMPLETED' "
+            + "AND EXTRACT(MONTH FROM updated_at) = EXTRACT(MONTH FROM CURRENT_DATE) "
+            + "AND EXTRACT(YEAR FROM updated_at) = EXTRACT(YEAR FROM CURRENT_DATE)")
+    Mono<Long> countCompletedThisMonth();
 }

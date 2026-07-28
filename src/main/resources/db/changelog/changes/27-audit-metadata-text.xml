@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!--
+      Convertit audit_events.metadata de JSONB vers TEXT.
+      Raison : R2DBC ne sait pas caster automatiquement un String Java vers JSONB
+      (`column "metadata" is of type jsonb but expression is of type character varying`).
+      Pour R1 on ne fait pas de query JSON native → TEXT suffit et débloque l'INSERT.
+      Si des requêtes JSON deviennent nécessaires plus tard, on repassera en JSONB
+      avec un codec io.r2dbc.postgresql.codec.Json côté entité.
+    -->
+    <changeSet id="27-audit-metadata-text" author="release1-fix">
+        <sql>
+            ALTER TABLE audit_events
+            ALTER COLUMN metadata TYPE TEXT USING metadata::text;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

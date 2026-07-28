@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.0.xsd">
+
+    <changeSet id="29-payment-portions" author="release2">
+        <sql>
+            ALTER TABLE payments
+            ADD COLUMN IF NOT EXISTS payment_category VARCHAR(32),
+            ADD COLUMN IF NOT EXISTS rental_portion NUMERIC(19,2),
+            ADD COLUMN IF NOT EXISTS caution_portion NUMERIC(19,2);
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

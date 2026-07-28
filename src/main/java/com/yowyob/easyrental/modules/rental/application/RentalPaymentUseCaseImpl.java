@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -40,42 +41,123 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
     public Mono<RentalEntity> processPayment(UUID rentalId, PaymentRequest request) {
         return rentalRepository.findById(rentalId)
             .switchIfEmpty(Mono.error(new ResourceNotFoundException("Rental not found")))
-            .flatMap(rental -> {
+            .flatMap(rental -> settleClientDebtsFirst(rental, request.amount())
+                .flatMap(remaining -> remaining.signum() <= 0
+                        ? rentalRepository.save(rental)
+                        : allocatePayment(rental, remaining, request)));
+    }
+
+    /**
+     * Alloue le paiement (net de la dette éventuellement épongée) sur la location :
+     * ventilation location/caution, statut, revenus, notifications.
+     */
+    private Mono<RentalEntity> allocatePayment(RentalEntity rental, BigDecimal amount, PaymentRequest request) {
+        final UUID rentalId = rental.getId();
+        {
+                // R2 proportional allocation: split the incoming amount between the rental fee
+                // (agency revenue) and the caution (agency escrow), pro-rata to rentalAmount/cautionAmount.
+                // Legacy rentals (created before the R2 pricing breakdown) have no rentalAmount/
+                // cautionAmount set: fall back to totalAmount as 100% rental fee, 0% caution.
+                BigDecimal rentalAmount = rental.getRentalAmount();
+                BigDecimal cautionAmount = rental.getCautionAmount();
+                BigDecimal totalDue;
+                if (rentalAmount == null) {
+                    rentalAmount = rental.getTotalAmount() == null ? BigDecimal.ZERO : rental.getTotalAmount();
+                    cautionAmount = BigDecimal.ZERO;
+                    totalDue = rentalAmount;
+                } else {
+                    cautionAmount = cautionAmount == null ? BigDecimal.ZERO : cautionAmount;
+                    totalDue = rentalAmount.add(cautionAmount);
+                }
+
+                BigDecimal rentalPortion;
+                BigDecimal cautionPortion;
+                if (totalDue.compareTo(BigDecimal.ZERO) <= 0) {
+                    // Nothing to prorate against: treat as pure rental fee (no caution due).
+                    rentalPortion = amount;
+                    cautionPortion = BigDecimal.ZERO;
+                } else {
+                    // Single division (amount * rentalAmount / totalDue) rather than pre-rounding a
+                    // ratio to a fixed scale and then multiplying — avoids compounding rounding error.
+                    rentalPortion = amount.multiply(rentalAmount)
+                        .divide(totalDue, 2, RoundingMode.HALF_UP);
+                    // cautionPortion via subtraction guarantees rentalPortion + cautionPortion == amount.
+                    cautionPortion = amount.subtract(rentalPortion);
+                }
+
+                // paymentCategory convention: RENTAL_FEE when the payment is (or falls back to being)
+                // pure rental fee, CAUTION when it is pure caution, MIXED otherwise (the R2 norm for an
+                // initial 60% upfront payment, which always covers part of both).
+                String paymentCategory;
+                if (cautionPortion.compareTo(BigDecimal.ZERO) == 0) {
+                    paymentCategory = "RENTAL_FEE";
+                } else if (rentalPortion.compareTo(BigDecimal.ZERO) == 0) {
+                    paymentCategory = "CAUTION";
+                } else {
+                    paymentCategory = "MIXED";
+                }
+
                 // 1. Enregistrement du paiement
                 PaymentEntity payment = PaymentEntity.builder()
                     .id(UUID.randomUUID())
                     .rentalId(rentalId)
-                    .amount(request.amount())
+                    .amount(amount)
                     .paymentMethod(request.method())
                     .transactionDate(LocalDateTime.now())
                     .transactionRef("TXN-" + System.currentTimeMillis())
+                    .paymentCategory(paymentCategory)
+                    .rentalPortion(rentalPortion)
+                    .cautionPortion(cautionPortion)
                     .isNewRecord(true)
                     .build();
 
+                BigDecimal finalRentalPortion = rentalPortion;
+                BigDecimal finalCautionPortion = cautionPortion;
+                BigDecimal finalTotalDue = totalDue;
+
                 return paymentRepository.save(payment).flatMap(savedPayment -> {
-                    // 2. Mise à jour du montant payé
-                    BigDecimal newAmountPaid = rental.getAmountPaid().add(request.amount());
+                    // 2. Mise à jour du montant payé (legacy mirror + ventilation R2)
+                    BigDecimal previousAmountPaid = rental.getAmountPaid() == null
+                        ? BigDecimal.ZERO : rental.getAmountPaid();
+                    BigDecimal newAmountPaid = previousAmountPaid.add(amount);
                     rental.setAmountPaid(newAmountPaid);
 
-                    // 3. Logique des seuils (60% = RESERVED, 100% = PAID)
-                    BigDecimal total = rental.getTotalAmount();
-                    BigDecimal sixtyPercent = total.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE);
+                    BigDecimal newRentalAmountPaid = (rental.getRentalAmountPaid() == null
+                        ? BigDecimal.ZERO : rental.getRentalAmountPaid()).add(finalRentalPortion);
+                    BigDecimal newCautionAmountPaid = (rental.getCautionAmountPaid() == null
+                        ? BigDecimal.ZERO : rental.getCautionAmountPaid()).add(finalCautionPortion);
+                    rental.setRentalAmountPaid(newRentalAmountPaid);
+                    rental.setCautionAmountPaid(newCautionAmountPaid);
+                    // Mirror until checkout settlement (Task 7) applies deductions/refunds.
+                    rental.setCautionHeld(newCautionAmountPaid);
+
+                    // 3. Logique des seuils (60% = RESERVED, 100% = PAID), jamais de régression de statut
+                    BigDecimal totalPaid = newRentalAmountPaid.add(newCautionAmountPaid);
+                    BigDecimal sixtyPercent = finalTotalDue.multiply(RentalConstants.RESERVATION_DEPOSIT_RATE);
 
                     RentalStatus oldStatus = rental.getStatus();
-                    RentalStatus newStatus = oldStatus;
-
-                    if (newAmountPaid.compareTo(total) >= 0) {
-                        newStatus = RentalStatus.PAID;
-                    } else if (newAmountPaid.compareTo(sixtyPercent) >= 0) {
-                        newStatus = RentalStatus.RESERVED;
+                    RentalStatus computedStatus;
+                    if (totalPaid.compareTo(finalTotalDue) >= 0) {
+                        computedStatus = RentalStatus.PAID;
+                    } else if (totalPaid.compareTo(sixtyPercent) >= 0) {
+                        computedStatus = RentalStatus.RESERVED;
+                    } else {
+                        computedStatus = RentalStatus.PENDING;
                     }
+                    RentalStatus newStatus = statusRank(computedStatus) > statusRank(oldStatus)
+                        ? computedStatus : oldStatus;
 
                     rental.setStatus(newStatus);
 
-                    // 4. Mise à jour revenus Agence
+                    // 4. Mise à jour revenus Agence (rentalPortion uniquement — jamais amount) + escrow caution
                     Mono<Void> updateRevenue = agencyRepository.findById(rental.getAgencyId())
                         .flatMap(agency -> {
-                            agency.setMonthlyRevenue(agency.getMonthlyRevenue() + request.amount().doubleValue());
+                            double currentRevenue = agency.getMonthlyRevenue() == null
+                                ? 0.0 : agency.getMonthlyRevenue();
+                            agency.setMonthlyRevenue(currentRevenue + finalRentalPortion.doubleValue());
+                            BigDecimal currentEscrow = agency.getCautionEscrowBalance() == null
+                                ? BigDecimal.ZERO : agency.getCautionEscrowBalance();
+                            agency.setCautionEscrowBalance(currentEscrow.add(finalCautionPortion));
                             return agencyRepository.save(agency);
                         }).then();
 
@@ -102,7 +184,8 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
                         rental.getId(), rental.getClientId(), NotificationResourceType.CLIENT,
                                 NotificationReason.PAYMENT_RECEIVED,
                         rental.getVehicleId(), rental.getDriverId(),
-                        NotificationTemplate.PAYMENT_RECEIVED_CLIENT, request.amount(), newAmountPaid, total, newStatus
+                        NotificationTemplate.PAYMENT_RECEIVED_CLIENT, request.amount(), newAmountPaid,
+                        finalTotalDue, newStatus
                     ).then() : Mono.empty();
 
                     Mono<Void> notifyAgency = notificationService.createNotification(
@@ -150,6 +233,90 @@ public class RentalPaymentUseCaseImpl implements RentalPaymentUseCase {
                         .then(notifyReservationSuccess)
                         .then(rentalRepository.save(rental));
                 });
+        }
+    }
+
+    /**
+     * Épongé la dette (supplément impayé) du client dans l'organisation de l'agence courante,
+     * dossiers les plus anciens d'abord. Le revenu va à l'agence lésée (celle du dossier en dette).
+     * Retourne le montant restant après règlement de la dette.
+     */
+    private Mono<BigDecimal> settleClientDebtsFirst(RentalEntity rental, BigDecimal fullAmount) {
+        if (rental.getClientId() == null || fullAmount == null || fullAmount.signum() <= 0) {
+            return Mono.just(fullAmount == null ? BigDecimal.ZERO : fullAmount);
+        }
+        return agencyRepository.findById(rental.getAgencyId())
+            .flatMap(ag -> ag.getOrganizationId() == null
+                ? Mono.just(fullAmount)
+                : settleClientDebts(rental.getClientId(), ag.getOrganizationId(), rental.getId(), fullAmount)
+                    .map(fullAmount::subtract))
+            .defaultIfEmpty(fullAmount);
+    }
+
+    /** Règle les dettes du client (org-scoped) à hauteur de {@code available}. Retourne le montant consommé. */
+    private Mono<BigDecimal> settleClientDebts(UUID clientId, UUID orgId, UUID excludeRentalId, BigDecimal available) {
+        return rentalRepository.findClientDebtRentals(clientId, orgId)
+            .filter(dr -> !dr.getId().equals(excludeRentalId))
+            .collectList()
+            .flatMap(debts -> {
+                BigDecimal remaining = available;
+                BigDecimal consumed = BigDecimal.ZERO;
+                java.util.List<Mono<Void>> ops = new java.util.ArrayList<>();
+                for (RentalEntity dr : debts) {
+                    if (remaining.signum() <= 0) {
+                        break;
+                    }
+                    BigDecimal due = dr.getSupplementDue() == null ? BigDecimal.ZERO : dr.getSupplementDue();
+                    if (due.signum() <= 0) {
+                        continue;
+                    }
+                    BigDecimal pay = due.min(remaining);
+                    remaining = remaining.subtract(pay);
+                    consumed = consumed.add(pay);
+                    dr.setSupplementDue(due.subtract(pay));
+                    dr.setUpdatedAt(LocalDateTime.now());
+                    PaymentEntity supPay = PaymentEntity.builder()
+                            .id(UUID.randomUUID())
+                            .rentalId(dr.getId())
+                            .amount(pay)
+                            .paymentMethod(request0Method())
+                            .transactionDate(LocalDateTime.now())
+                            .transactionRef("SUPP-" + System.currentTimeMillis())
+                            .paymentCategory("SUPPLEMENT_PAID")
+                            .rentalPortion(pay)          // encaissement de la dette = revenu
+                            .cautionPortion(BigDecimal.ZERO)
+                            .isNewRecord(true)
+                            .build();
+                    final BigDecimal payFinal = pay;
+                    ops.add(rentalRepository.save(dr)
+                            .then(paymentRepository.save(supPay))
+                            .then(agencyRepository.findById(dr.getAgencyId())
+                                    .flatMap(ag -> {
+                                        double rev = ag.getMonthlyRevenue() == null ? 0.0 : ag.getMonthlyRevenue();
+                                        ag.setMonthlyRevenue(rev + payFinal.doubleValue());
+                                        return agencyRepository.save(ag);
+                                    }).then()));
+                }
+                BigDecimal consumedFinal = consumed;
+                return Mono.when(ops).thenReturn(consumedFinal);
             });
+    }
+
+    private com.yowyob.easyrental.shared.enums.PaymentMethod request0Method() {
+        return com.yowyob.easyrental.shared.enums.PaymentMethod.CASH;
+    }
+
+    /**
+     * Monotonic rank used to ensure payment-driven status transitions never regress:
+     * PENDING &lt; RESERVED &lt; PAID. Any later lifecycle status (ONGOING, UNDER_REVIEW, COMPLETED,
+     * CANCELLED) already sits beyond the payment phase and must never be pulled back down here.
+     */
+    private static int statusRank(RentalStatus status) {
+        return switch (status) {
+            case PENDING -> 0;
+            case RESERVED -> 1;
+            case PAID -> 2;
+            default -> 3;
+        };
     }
 }

@@ -70,6 +70,7 @@ class RentalUseCaseImplTest {
     @Mock private VehicleUseCase vehicleService;
     @Mock private DriverUseCase driverService;
     @Mock private AuthUserPort authUserPort;
+    @Mock private com.yowyob.easyrental.modules.loyalty.domain.port.in.LoyaltyUseCase loyaltyUseCase;
     @InjectMocks private RentalUseCaseImpl rentalUseCase;
 
     private UUID vehicleId;
@@ -225,7 +226,7 @@ class RentalUseCaseImplTest {
         LocalDateTime start = LocalDateTime.now();
         LocalDateTime end = start.plusDays(2);
         RentalInitRequest request = new RentalInitRequest(
-                vehicleId, driverId, start, end, RentalType.DAILY, "690000000");
+                vehicleId, driverId, start, end, RentalType.DAILY, "690000000", null);
         PricingEntity vehiclePrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(100)).build();
         PricingEntity driverPrice = PricingEntity.builder().pricePerDay(BigDecimal.valueOf(50)).build();
         UserEntity client = UserEntity.builder()
@@ -256,7 +257,7 @@ class RentalUseCaseImplTest {
         LocalDateTime start = LocalDateTime.now().minusDays(2);
         LocalDateTime end = start.plusDays(1);
         RentalInitRequest request = new RentalInitRequest(
-                vehicleId, null, start, end, RentalType.DAILY, "690000000");
+                vehicleId, null, start, end, RentalType.DAILY, "690000000", null);
 
         StepVerifier.create(rentalUseCase.initiateRental(clientId, request))
                 .expectError(ValidationException.class)

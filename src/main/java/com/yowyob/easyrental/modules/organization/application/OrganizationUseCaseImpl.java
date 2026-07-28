@@ -1,5 +1,6 @@
 package com.yowyob.easyrental.modules.organization.application;
 
+import com.yowyob.easyrental.modules.agency.domain.port.out.AgencyRepositoryPort;
 import com.yowyob.easyrental.modules.media.domain.MediaEntity;
 import com.yowyob.easyrental.modules.media.domain.port.in.MediaUseCase;
 import com.yowyob.easyrental.modules.organization.dto.OrgResponseDTO;
@@ -21,6 +22,7 @@ import com.yowyob.easyrental.kernel.infrastructure.KernelContextHolder;
 import com.yowyob.easyrental.kernel.infrastructure.KernelResponseSupport;
 import com.yowyob.easyrental.kernel.infrastructure.adapter.KernelOrganizationAdapter;
 import com.yowyob.easyrental.kernel.security.KernelAuthenticationToken;
+import com.yowyob.easyrental.modules.audit.domain.port.in.AuditUseCase;
 import com.yowyob.easyrental.shared.exception.ValidationException;
 import com.yowyob.easyrental.modules.auth.domain.UserEntity;
 import com.yowyob.easyrental.modules.auth.domain.port.out.UserRepositoryPort;
@@ -55,6 +57,8 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
     private final KernelLocalOrganizationLinkService kernelLocalOrganizationLinkService;
     private final KernelOwnerAssignmentService kernelOwnerAssignmentService;
     private final KernelBusinessActorProvisioningService kernelBusinessActorProvisioningService;
+    private final AgencyRepositoryPort agencyRepositoryPort;
+    private final AuditUseCase auditUseCase;
 
     public Mono<OrgResponseDTO> getOrganization(UUID id) {
         return organizationRepository.findById(id)
@@ -468,8 +472,20 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
                     .switchIfEmpty(Mono.defer(() -> kernelLocalOrganizationLinkService
                             .ensureLocalOrganization(user, null)))
                     .flatMap(this::syncGovernanceFromKernelIfNeeded)
-                    .map(org -> new OrgUserResponseDTO(user, orgMapper.toDto(org)))
-                    .defaultIfEmpty(new OrgUserResponseDTO(user, null)));
+                    .flatMap(org -> buildOrgUserResponse(user, org))
+                    .defaultIfEmpty(new OrgUserResponseDTO(user, null, null)));
+    }
+
+    private Mono<OrgUserResponseDTO> buildOrgUserResponse(UserEntity user, OrganizationEntity org) {
+        OrgResponseDTO orgDto = orgMapper.toDto(org);
+        if (org.getAccountType() != null && "FREELANCE".equalsIgnoreCase(org.getAccountType())) {
+            return agencyRepositoryPort.findAllByOrganizationId(org.getId())
+                    .next()
+                    .map(agency -> new OrgUserResponseDTO(user, orgDto, agency.getId()))
+                    .defaultIfEmpty(new OrgUserResponseDTO(user, orgDto, null))
+                    .onErrorResume(e -> Mono.just(new OrgUserResponseDTO(user, orgDto, null)));
+        }
+        return Mono.just(new OrgUserResponseDTO(user, orgDto, null));
     }
 
     private Mono<OrganizationEntity> syncGovernanceFromKernelIfNeeded(OrganizationEntity org) {
@@ -538,5 +554,34 @@ public class OrganizationUseCaseImpl implements OrganizationUseCase {
         return subscriptionUseCase.adminAssignPlan(orgId, planName)
                 .flatMap(plan -> organizationRepository.findById(orgId)
                         .flatMap(subscriptionUseCase::buildSubscriptionResponse));
+    }
+
+    public Mono<OrganizationEntity> upgradeToCompany(UUID userId) {
+        return organizationRepository.findByOwnerId(userId)
+                .switchIfEmpty(Mono.error(new ValidationException("Organisation introuvable pour l'utilisateur")))
+                .flatMap(org -> {
+                    if (org.getAccountType() != null && "COMPANY".equalsIgnoreCase(org.getAccountType())) {
+                        return Mono.just(org);
+                    }
+                    org.setAccountType("COMPANY");
+                    return organizationRepository.save(org);
+                })
+                // Le record d'audit reste hors de la gestion d'erreur de la chaîne réactive :
+                // il ne se déclenche que sur succès (doOnSuccess), jamais sur échec.
+                .doOnSuccess(org -> {
+                    if (org != null) {
+                        auditUseCase.record(userId, "UPGRADE_TO_COMPANY", "ORGANIZATION", org.getId(),
+                                null, null, null).subscribe();
+                    }
+                });
+    }
+
+    @Override
+    public Mono<OrgResponseDTO> upgradeToCompanyForCurrentUser() {
+        return ReactiveSecurityContextHolder.getContext()
+                .flatMap(ctx -> resolveCurrentUser(ctx.getAuthentication()))
+                .switchIfEmpty(Mono.error(new ValidationException("Utilisateur non authentifié")))
+                .flatMap(user -> upgradeToCompany(user.getId()))
+                .map(orgMapper::toDto);
     }
 }

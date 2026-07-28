@@ -2,6 +2,9 @@ package com.yowyob.easyrental.modules.rental.domain.port.in;
 
 import com.yowyob.easyrental.modules.rental.domain.RentalEntity;
 import com.yowyob.easyrental.modules.rental.dto.AgencyRentalRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckInRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckOutRequest;
+import com.yowyob.easyrental.modules.rental.dto.CheckoutSettlementRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalDetailResponseDTO;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitRequest;
 import com.yowyob.easyrental.modules.rental.dto.RentalInitResponse;
@@ -22,6 +25,21 @@ public interface RentalUseCase {
     Mono<RentalEntity> startRental(UUID rentalId);
     Mono<RentalEntity> signalEndRental(UUID rentalId);
     Mono<RentalEntity> validateReturn(UUID rentalId);
+
+    // R2 — cycle location complet avec inspections + caution
+    Mono<RentalDetailResponseDTO> checkIn(UUID rentalId, CheckInRequest request);
+    Mono<RentalDetailResponseDTO> signalEnd(UUID rentalId);
+    Mono<RentalDetailResponseDTO> checkOut(UUID rentalId, CheckOutRequest request);
+    Mono<RentalDetailResponseDTO> settleReturn(UUID rentalId, CheckoutSettlementRequest request);
+    Mono<RentalDetailResponseDTO> collectSupplement(UUID rentalId, java.math.BigDecimal amount);
+    /** Dette totale du client dans l'organisation de l'agence donnée. */
+    Mono<java.math.BigDecimal> getClientDebtForAgency(UUID clientId, UUID agencyId);
+    /** Dettes impayées d'une organisation (dossiers). */
+    Flux<RentalEntity> getOrganizationDebts(UUID orgId);
+    /** Dettes impayées d'une agence (dossiers). */
+    Flux<RentalEntity> getAgencyDebts(UUID agencyId);
+    /** Somme des dettes impayées sur toute la plateforme (admin). */
+    Mono<java.math.BigDecimal> getTotalOutstandingDebt();
     Mono<RentalEntity> cancelRental(UUID rentalId);
     Flux<RentalEntity> getClientActiveReservations(UUID clientId);
     Flux<RentalEntity> getClientRentalsHistory(UUID clientId);

@@ -55,7 +55,42 @@ public class RentalRepositoryAdapter implements RentalRepositoryPort {
     }
 
     @Override
+    public Flux<RentalEntity> findClientDebtRentals(UUID clientId, UUID orgId) {
+        return rentalRepository.findClientDebtRentals(clientId, orgId);
+    }
+
+    @Override
+    public Flux<RentalEntity> findOrganizationDebts(UUID orgId) {
+        return rentalRepository.findOrganizationDebts(orgId);
+    }
+
+    @Override
+    public Flux<RentalEntity> findAgencyDebts(UUID agencyId) {
+        return rentalRepository.findAgencyDebts(agencyId);
+    }
+
+    @Override
+    public Mono<java.math.BigDecimal> sumOutstandingDebt() {
+        return rentalRepository.sumOutstandingDebt();
+    }
+
+    @Override
     public Mono<Long> countConflictingRentals(UUID vehicleId, LocalDateTime start, LocalDateTime end) {
         return rentalRepository.countConflictingRentals(vehicleId, start, end);
+    }
+
+    @Override
+    public Mono<Long> count() {
+        return rentalRepository.count();
+    }
+
+    @Override
+    public Mono<Long> countByStatus(RentalStatus status) {
+        return rentalRepository.countByStatus(status);
+    }
+
+    @Override
+    public Mono<Long> countCompletedThisMonth() {
+        return rentalRepository.countCompletedThisMonth();
     }
 }

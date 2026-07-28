@@ -28,6 +28,11 @@ public class PaymentEntity implements Persistable<UUID> {
     private LocalDateTime transactionDate;
     private String transactionRef;
 
+    // R2 pricing allocation fields
+    private String paymentCategory;
+    private BigDecimal rentalPortion;
+    private BigDecimal cautionPortion;
+
     @Transient
     @Builder.Default
     private boolean isNewRecord = false;
