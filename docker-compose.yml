@@ -86,8 +86,11 @@ services:
       # ---- Kernel-core integration (prod) ----
       KERNEL_INTEGRATION_ENABLED: "true"
       KERNEL_BASE_URL: ${KERNEL_BASE_URL:-https://kernel-core.yowyob.com/kernel-api}
-      KERNEL_CLIENT_ID: ${KERNEL_CLIENT_ID}
-      KERNEL_API_KEY: ${KERNEL_API_KEY}
+      KERNEL_CLIENT_ID: ${KERNEL_CLIENT_ID:-prod-platform-backend}
+      KERNEL_API_KEY: ${KERNEL_API_KEY:-VbWi225xzYPoD8rQ2FRniTAqkylh34XYeWxa9HCU}
+      # ---- Kernel admin (obtention du jeton applicatif) ----
+      KERNEL_ADMIN_USERNAME: ${KERNEL_ADMIN_USERNAME:-platform-admin}
+      KERNEL_ADMIN_PASSWORD: ${KERNEL_ADMIN_PASSWORD:-281kFEOhFYuj7n9cfgGp}
       KERNEL_TENANT_ID: ${KERNEL_TENANT_ID:-11111111-1111-1111-1111-111111111111}
       # ---- Support / console URLs ----
       SUPPORT_ADMIN_EMAIL: ${SUPPORT_ADMIN_EMAIL:-rentalreseau01@gmail.com}
